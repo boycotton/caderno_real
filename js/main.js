@@ -49,6 +49,12 @@ function init() {
       try { await store.set('snip', ed.clip); } catch {}
       renderToolbar();
     },
+    onPenStats: st => setTimeout(() => {
+      const el = $('#st-save');
+      if (!el) return;
+      el.textContent = `caneta: ${(1000 / st.gap).toFixed(0)} eventos/s · pior pausa ${st.max.toFixed(0)} ms · desenho ${st.work.toFixed(1)} ms · ${st.ptsPerEv.toFixed(1)} pts/evento${ed.lowLatency ? ' · baixa latência' : ''}`;
+      clearTimeout(window.__stT); window.__stT = setTimeout(updateSaveState, 8000);
+    }, 0),
     onLearn: async (i, pt, e, mode) => {
       if (!learn || !cur) return;
       if (mode === 'tap') { if (i < 0 || !pt) return learn.hide(); learnBusy = learn.begin(cur, i, ed.pages[i], pt); return; }
@@ -1316,11 +1322,15 @@ function openSettings() {
         </details>
         <h4>Escrita</h4>
         <label class="switch"><input type="checkbox" id="s-pen" ${p.penOnly ? 'checked' : ''}><span></span>Só a S Pen desenha (o dedo rola e dá zoom)</label>
+        <label class="switch"><input type="checkbox" id="s-low" ${p.lowLatency ? 'checked' : ''}><span></span>Caneta de baixa latência (experimental)</label>
+        <label class="switch"><input type="checkbox" id="s-meter" ${p.penMeter ? 'checked' : ''}><span></span>Medidor da caneta (mostra no rodapé depois de cada traço)</label>
         <h4>Armazenamento</h4>
         <p class="muted small" id="s-store">…</p>
 `;
       $('#s-cid', b).onchange = e => { setPref('clientId', e.target.value.trim()); drive.signOut(); };
       $('#s-pen', b).onchange = e => ed.setPenOnly(e.target.checked);
+      $('#s-low', b).onchange = e => { const ok = ed.setLowLatency(e.target.checked); if (e.target.checked && !ok) toast('Este navegador não aceitou o modo de baixa latência.', { kind: 'warn' }); };
+      $('#s-meter', b).onchange = e => { setPref('penMeter', e.target.checked); ed.penMeter = e.target.checked; };
       $('#s-test', b).onclick = async () => {
         setPref('clientId', $('#s-cid', b).value.trim());
         try { await drive.signIn(); const f = await drive.listFolder('root'); toast(`Conectado (${f.length} itens no Meu Drive)`, { kind: 'ok' }); }

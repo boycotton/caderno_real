@@ -26,7 +26,7 @@ export class Editor {
     this.sheet = root.querySelector('#sheet');
     this.overlay = root.querySelector('#overlay');
     // sem 'desynchronized': em tablets Android esse modo deixa o fundo transparente preto
-    this.octx = this.overlay.getContext('2d');
+    this._makeOverlay(!!prefs().lowLatency);
     this.doc = null;
     this.views = new Map();
     this.layout = [];
@@ -43,6 +43,7 @@ export class Editor {
     this.stamp = null;               // conteúdo do modo "colar/carimbo"
     this.penOnly = prefs().penOnly ?? false;
     this.shapeAssist = !!prefs().shapeAssist;
+    this.penMeter = !!prefs().penMeter;
     this.ptrs = new Map();
     this.gesture = null;
     this.activePen = null;
@@ -632,7 +633,15 @@ export class Editor {
     const g = this.gesture;
     if (!g) return;
     if (g.kind === 'nav') { this._navMove(); e.preventDefault(); return; }
-    if (g.kind === 'draw' && g.pointerId === e.pointerId) this._drawMove(e);
+    if (g.kind === 'draw' && g.pointerId === e.pointerId) {
+      if (this.penMeter && g.obj?.t === 'stroke') {
+        const t0 = performance.now(), st = g.stats || (g.stats = { n: 0, gaps: 0, max: 0, work: 0, last: e.timeStamp, pts: 0 });
+        this._drawMove(e);
+        const gap = e.timeStamp - st.last; st.last = e.timeStamp;
+        st.n++; st.gaps += gap; st.max = Math.max(st.max, gap); st.work += performance.now() - t0;
+        st.pts += e.getCoalescedEvents ? e.getCoalescedEvents().length : 1;
+      } else this._drawMove(e);
+    }
   }
 
   _up(e, cancel = false) {
@@ -779,6 +788,20 @@ export class Editor {
     return this.tool;
   }
 
+  // Camada do traço ao vivo. "Baixa latência" usa o modo desynchronized do Chrome (desenha direto na tela).
+  _makeOverlay(low) {
+    const old = this.overlay;
+    const c = document.createElement('canvas');
+    c.id = 'overlay';
+    old.replaceWith(c);
+    this.overlay = c;
+    this.octx = (low && c.getContext('2d', { desynchronized: true })) || c.getContext('2d');
+    this.lowLatency = !!low && !!this.octx.getContextAttributes?.().desynchronized;
+    this._vw = 0;
+    this._onResize?.();
+  }
+  setLowLatency(v) { setPref('lowLatency', !!v); this._makeOverlay(!!v); return this.lowLatency; }
+
   _startDraw(e) {
     const i = this._pageAtEvent(e);
     const tool = this._effectiveTool(e);
@@ -883,6 +906,7 @@ export class Editor {
 
   _drawEnd(e, cancel) {
     const g = this.gesture;
+    if (g?.stats?.n > 3) { const st = g.stats; this.hooks.onPenStats?.({ ev: st.n, gap: st.gaps / st.n, max: st.max, work: st.work / st.n, ptsPerEv: st.pts / st.n }); }
     this.gesture = null;
     if (e.pointerType === 'pen') this.activePen = null;
     if (!g) return;
