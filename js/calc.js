@@ -148,7 +148,10 @@ export class Calculator {
     const e = this.el;
     const ex = this.expr || (this.last ? this.last + ' =' : '');
     $('.calc-expr', e).textContent = ex.length > 34 ? '…' + ex.slice(-33) : ex;
-    $('.calc-out', e).textContent = this.expr ? this.preview() : (this.out || '0');
+    const out = this.expr ? this.preview() : (this.out || '0');
+    const o = $('.calc-out', e);
+    o.textContent = out;
+    o.style.fontSize = (out.length > 16 ? Math.max(18, Math.floor(34 * 16 / out.length)) : 34) + 'px';
     $('.calc-deg', e).textContent = this.deg ? 'DEG' : 'RAD';
     $('.calc-m', e).textContent = this.mem ? 'M' : '';
     $$('.ck', e).find(b => b.textContent === 'DEG' || b.textContent === 'RAD').textContent = this.deg ? 'DEG' : 'RAD';

@@ -251,7 +251,7 @@ export class Editor {
       const p = this.pages[i], v = this.views.get(p.id);
       if (!v || v.dead) continue;
       const vis = L.y + L.h > top && L.y < top + vh && L.x + L.w > left && L.x < left + vw;
-      const need = this._pxRatio(p) < this.dpr * this.zoom * 0.92;
+      const need = this._pxRatio(p) < this.dpr * this.zoom * 0.99;
       if (!vis || !need) { this._dropDetail(v); continue; }
       const z = this.zoom, s = this.dpr * z;
       const mx = vw * 0.15, my = vh * 0.15;
@@ -912,7 +912,7 @@ export class Editor {
     }
     if (g.obj?.t === 'stroke') {
       if (cancel && g.obj.pts.length < 3) { this._clearOverlay(); return; }
-      const o = { ...g.obj, id: newId(), pts: simplifyPts(g.obj.pts, 0.3 / Math.max(0.5, this.zoom)) };
+      const o = { ...g.obj, id: newId(), pts: simplifyPts(g.obj.pts, 0.08 / Math.max(0.5, this.zoom)) };
       this._setObjs(p, [...p.objs, o]);
       this._inkAdd(p, o);
       this._clearOverlay();

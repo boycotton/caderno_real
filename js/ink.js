@@ -6,8 +6,8 @@ let _id = 0;
 export const newId = () => Date.now().toString(36) + (_id++).toString(36) + Math.random().toString(36).slice(2, 6);
 
 export const TOOL_STYLE = {
-  pen:    { thinning: 0.55, smoothing: 0.5, streamline: 0.2, opacity: 1 },
-  pencil: { thinning: 0.25, smoothing: 0.55, streamline: 0.2, opacity: 0.78 },
+  pen:    { thinning: 0.5, smoothing: 0.2, streamline: 0.05, opacity: 1 },
+  pencil: { thinning: 0.25, smoothing: 0.2, streamline: 0.05, opacity: 0.78 },
   marker: { thinning: 0,    smoothing: 0.6,  streamline: 0.55, opacity: 0.35 },
 };
 
