@@ -33,7 +33,7 @@ window.addEventListener('DOMContentLoaded', init);
 function init() {
   buildEditorChrome();
   ed = new Editor($('#editor'), {
-    onChange: () => { if (cur) { cur.dirty = true; updateSaveState(); scheduleAutosave(); } },
+    onChange: () => { if (cur) { cur.dirty = true; cur._rev = (cur._rev || 0) + 1; updateSaveState(); scheduleAutosave(); } },
     onHistory: () => { $('#b-undo').disabled = !ed.canUndo(); $('#b-redo').disabled = !ed.canRedo(); },
     onTool: () => renderToolbar(),
     onPage: (i, n) => { $('#pageind').textContent = `${i + 1}/${n}`; },
@@ -149,8 +149,24 @@ async function importLibrary() {
 window.addEventListener('drive-signed-in', () => setTimeout(importLibrary, 500));
 
 // ============================================================ tela inicial (área de trabalho)
+// Documentos abertos: ficam na memória (PDF já carregado e posição de leitura) para voltar na hora,
+// e no tablet (IndexedDB) para sobreviver ao fechar o app. Só baixa do Drive se o arquivo mudou lá.
+const live = new Map();       // id -> doc carregado
+const LIVE_MAX = 4;
+function keepLive(doc) {
+  if (!doc) return;
+  if (ed.doc === doc) doc._view = { top: ed.viewer.scrollTop, left: ed.viewer.scrollLeft, zoom: ed.zoom, fit: ed.fitMode };
+  live.delete(doc.id); live.set(doc.id, doc);
+  while (live.size > LIVE_MAX) { const [k, d] = live.entries().next().value; live.delete(k); try { d.pdf?.destroy?.(); } catch {} }
+}
+
 async function showHome() {
-  if (cur) { await saveLocal(); }
+  if (cur) {
+    await saveLocal();
+    keepLive(cur);
+    const d = cur;
+    if (d.dirty && d.source.t === 'drive') syncToDrive(d);   // envia sozinho em segundo plano
+  }
   cur = null;
   $('#editor').hidden = true;
   $('#home').hidden = false;
@@ -167,18 +183,15 @@ async function showHome() {
       </section>
     </div>
     <footer class="taskbar">
-      <button class="btn tb-start" id="h-new">${icon('plus', 'sm')}<b>Nova nota</b></button>
-      <button class="btn" id="h-folder">${icon('folderplus', 'sm')}<span>Nova pasta</span></button>
-      <button class="btn" id="h-local">${icon('file', 'sm')}<span>Abrir do tablet</span></button>
-      <span class="tb-fill"></span>
+      <button class="btn tb-start" id="h-start"><span class="start-logo">${icon('pen', 'sm')}</span><b>Iniciar</b></button>
+      <div class="tasks" id="h-tasks"></div>
       <span class="tb-tray"><button class="tray-btn lock-btn" id="h-lock" title="Travar">${icon('unlock', 'sm')}</button><button class="tray-btn" id="h-settings" title="Configurações">${icon('settings', 'sm')}</button><span id="h-clock"></span></span>
     </footer>
     <input type="file" id="h-file" accept="application/pdf,.pdf" hidden>`;
   renderDesktop();
   $('#fw-close').onclick = closeFilesWin;
-  $('#h-new').onclick = () => newNoteDialog(openFolder());
-  $('#h-folder').onclick = desktopNewFolder;
-  $('#h-local').onclick = () => $('#h-file').click();
+  $('#h-start').onclick = ev => startMenu(ev.currentTarget);
+  renderTasks();
   $('#h-settings').onclick = openSettings;
   $('#h-lock').onclick = toggleLock;
   paintLock();
@@ -192,6 +205,47 @@ async function showHome() {
   clock(); clearInterval(showHome._t); showHome._t = setInterval(clock, 20000);
   const ow = prefs().openWin;
   if (ow?.start) openFilesWin(ow.start, ow.path);
+}
+
+function startMenu(anchor) {
+  popover(anchor, (pop, close) => {
+    pop.classList.add('start-menu');
+    pop.append(
+      menuItem('plus', 'Nova nota', () => { close(); newNoteDialog(openFolder()); }),
+      menuItem('folderplus', 'Nova pasta', () => { close(); desktopNewFolder(); }),
+      menuItem('file', 'Abrir PDF do tablet', () => { close(); $('#h-file').click(); }),
+      h('<hr>'),
+      menuItem('settings', 'Configurações', () => { close(); openSettings(); }),
+    );
+  });
+  // abre para cima, como o menu Iniciar
+  const pop = $('.popover.start-menu');
+  if (pop) { const r = anchor.getBoundingClientRect(); pop.style.top = Math.max(8, r.top - pop.offsetHeight - 2) + 'px'; pop.style.left = r.left + 'px'; }
+}
+
+// Botões dos documentos abertos na barra de tarefas
+async function renderTasks() {
+  const box = $('#h-tasks');
+  if (!box) return;
+  const docs = await store.listDocs().catch(() => []);
+  box.innerHTML = '';
+  for (const d of docs) {
+    const src = d.source?.t === 'drive' ? icon('drive', 'sm') : d.source?.t === 'local' ? icon('folder', 'sm') : icon('file', 'sm');
+    const b = h(`<div class="task" title="${esc(d.name)}"><button class="task-open">${src}<span class="task-name">${esc(d.name)}</span>${d.dirty ? '<span class="docs-dirty" title="Não enviado ao Drive">●</span>' : ''}</button><button class="task-x" title="Fechar">×</button></div>`);
+    $('.task-open', b).onclick = () => resumeDoc(d.id);
+    $('.task-x', b).onclick = async () => { if (await closeDoc(d)) renderTasks(); };
+    box.appendChild(b);
+  }
+}
+
+// Fecha um documento aberto (tira da memória e do tablet). Pergunta se houver algo não salvo.
+async function closeDoc(d) {
+  if (d.dirty && d.source?.t !== 'drive' && !(await confirmBox('Fechar?', `“${d.name}” não foi salvo no Drive nem baixado. Fechar apaga o rascunho deste tablet.`, { ok: 'Fechar mesmo assim', danger: true }))) return false;
+  if (d.dirty && d.source?.t === 'drive' && !(await confirmBox('Fechar?', `“${d.name}” tem alterações que não foram enviadas ao Drive.`, { ok: 'Fechar sem enviar', danger: true }))) return false;
+  const l = live.get(d.id);
+  if (l) { live.delete(d.id); try { l.pdf?.destroy?.(); } catch {} }
+  await store.deleteDoc(d.id);
+  return true;
 }
 
 const pins = () => prefs().pins || [];
@@ -341,6 +395,9 @@ async function openFromBytes(bytes, { name, source }) {
 }
 
 async function resumeDoc(id) {
+  if (cur && cur.id !== id) { await saveLocal(); keepLive(cur); if (cur.dirty && cur.source.t === 'drive') syncToDrive(cur); }
+  const l = live.get(id);
+  if (l) { cur = l; live.delete(id); enterEditor(); return; }
   busy('Abrindo…');
   try {
     const d = await store.getDoc(id);
@@ -366,6 +423,11 @@ function enterEditor() {
   $('#doc-title').textContent = cur.name;
   if ($('#docs-lbl')) $('#docs-lbl').textContent = cur.name;
   ed.setDoc(cur);
+  const v = cur._view;
+  if (v) {
+    if (!v.fit) { ed.zoom = v.zoom; ed.fitMode = false; ed._relayout(); ed.hooks.onZoom?.(ed.zoomPercent()); }
+    ed.viewer.scrollTop = v.top; ed.viewer.scrollLeft = v.left; ed._scheduleRender();
+  }
   if (!ed.tool) ed.setTool('pen');
   renderToolbar();
   updateSaveState();
@@ -815,9 +877,8 @@ async function docsMenu(anchor) {
       const row = h(`<div class="docs-row ${on ? 'on' : ''}"><button class="docs-open">${src}<span class="docs-name">${esc(d.name)}</span>${d.dirty ? '<span class="docs-dirty" title="Não enviado ao Drive">●</span>' : ''}</button><button class="docs-x" title="Fechar">×</button></div>`);
       $('.docs-open', row).onclick = async () => { close(); if (!on) { await saveLocal(); resumeDoc(d.id); } };
       $('.docs-x', row).onclick = async () => {
-        if (d.dirty && d.source?.t !== 'drive' && !(await confirmBox('Fechar?', `“${d.name}” não foi salvo no Drive nem baixado. Fechar apaga o rascunho deste tablet.`, { ok: 'Fechar mesmo assim', danger: true }))) return;
-        if (d.dirty && d.source?.t === 'drive' && !(await confirmBox('Fechar?', `“${d.name}” tem alterações que não foram enviadas ao Drive.`, { ok: 'Fechar sem enviar', danger: true }))) return;
-        await store.deleteDoc(d.id);
+        if (on) { cur.dirty = !!cur.dirty; await saveLocal(); d.dirty = cur.dirty; }
+        if (!(await closeDoc(d))) return;
         row.remove();
         if (on) {
           cur = null;
@@ -834,15 +895,6 @@ async function docsMenu(anchor) {
 }
 
 async function leaveEditor() {
-  if (cur?.dirty && cur.source.t === 'drive') {
-    const v = await modal({
-      title: 'Enviar alterações para o Drive?',
-      build: b => { b.innerHTML = '<p class="muted">As alterações ficam guardadas no tablet de qualquer forma. Você pode enviar agora ou depois.</p>'; },
-      actions: [{ label: 'Sair sem enviar', value: () => 'leave' }, { label: 'Salvar no Drive', primary: true, value: () => 'save' }],
-    });
-    if (v === null) return;
-    if (v === 'save') { const ok = await saveDoc(); if (!ok) return; }
-  }
   showHome();
 }
 
@@ -865,13 +917,13 @@ function scheduleAutosave() {
   autosaveTimer = setTimeout(saveLocal, 1200);
 }
 
-async function saveLocal() {
-  if (!cur) return;
-  clearTimeout(autosaveTimer);
+async function saveLocal(doc = cur) {
+  if (!doc) return;
+  if (doc === cur) clearTimeout(autosaveTimer);
   const rec = {
-    id: cur.id, name: cur.name, source: cur.source, dirty: !!cur.dirty, renamePending: !!cur.renamePending,
-    pages: cur.pages.map(p => ({ id: p.id, w: p.w, h: p.h, m: p.m, src: p.src, tpl: p.tpl, objs: p.objs })),
-    pageCount: cur.pages.length, updatedAt: Date.now(),
+    id: doc.id, name: doc.name, source: doc.source, dirty: !!doc.dirty, renamePending: !!doc.renamePending,
+    pages: doc.pages.map(p => ({ id: p.id, w: p.w, h: p.h, m: p.m, src: p.src, tpl: p.tpl, objs: p.objs })),
+    pageCount: doc.pages.length, updatedAt: Date.now(),
   };
   try { await store.putDoc(rec); } catch (e) { console.warn('rascunho não salvo', e); }
 }
@@ -949,6 +1001,40 @@ async function saveDoc() {
     toast('Não foi possível salvar no Drive: ' + (e.message || e) + ' — suas alterações estão guardadas no tablet.', { kind: 'err', ms: 7000 });
     return false;
   } finally { saving = false; busy(false); updateSaveState(); }
+}
+
+// Envia ao Drive um documento que já não está na tela (ao voltar para a área de trabalho).
+const syncing = new Set();
+async function syncToDrive(d) {
+  if (syncing.has(d.id) || !drive.isConfigured()) return;
+  if (!drive.isSignedIn()) return;
+  syncing.add(d.id);
+  const rev = d._rev || 0;
+  try {
+    const meta = await drive.getMeta(d.source.fileId);
+    if (d.source.modifiedTime && meta.modifiedTime !== d.source.modifiedTime) {
+      toast(`“${d.name}” mudou no Drive: abra para escolher a versão.`, { kind: 'warn', ms: 6000 });
+      return;
+    }
+    toast(`Enviando “${d.name}” ao Drive…`, { ms: 0 });
+    const bytes = await buildPdf(d.baseBytes, d.pages, { title: d.name });
+    let res = await drive.updateFile(d.source.fileId, bytes);
+    if (d.renamePending) { res = await renameOnDrive(d.source.fileId, d.name); d.renamePending = false; }
+    // o arquivo salvo vira a nova base deste documento
+    d.pages.forEach((p, k) => { p.src = { t: 'pdf', i: k }; });
+    const r = await openPdf(bytes);
+    try { d.pdf?.destroy?.(); } catch {}
+    d.baseBytes = bytes; d.pdf = r.pdf; d.ocConfig = r.ocConfig;
+    d.source = { ...d.source, modifiedTime: res.modifiedTime };
+    d.dirty = (d._rev || 0) !== rev;          // escreveu mais enquanto enviava? continua marcado
+    await store.putBytes(d.id, bytes);
+    await saveLocal(d);
+    if (ed.doc === d) { ed.refreshAll(); updateSaveState(); }
+    toast(`“${d.name}” salvo no Drive`, { kind: 'ok' });
+    renderTasks();
+  } catch (e) {
+    toast(`Não foi possível enviar “${d.name}”: ${e.message || e} (continua guardado no tablet)`, { kind: 'err', ms: 6000 });
+  } finally { syncing.delete(d.id); }
 }
 
 async function renameOnDrive(id, name) {
@@ -1052,6 +1138,24 @@ async function driveOpenDialog() {
 }
 
 async function openDriveFile(f) {
+  // já está aberto/guardado no tablet? então abre na hora, sem baixar
+  const docs = await store.listDocs().catch(() => []);
+  const local = docs.find(d => d.source?.t === 'drive' && d.source.fileId === f.id);
+  if (local) {
+    const changed = f.modifiedTime && local.source.modifiedTime && f.modifiedTime !== local.source.modifiedTime;
+    if (!changed) return resumeDoc(local.id);
+    if (local.dirty) {
+      const v = await modal({
+        title: 'O arquivo mudou no Drive',
+        build: b => { b.innerHTML = `<p class="muted">“${esc(local.name)}” foi alterado em outro lugar e você também tem alterações neste tablet.</p>`; },
+        actions: [{ label: 'Abrir a minha versão', value: () => 'mine' }, { label: 'Baixar a do Drive', primary: true, value: () => 'drive' }],
+      });
+      if (v === 'mine') return resumeDoc(local.id);
+      if (v !== 'drive') return;
+    }
+    live.delete(local.id);
+    await store.deleteDoc(local.id);
+  }
   busy('Baixando do Drive…');
   try {
     const bytes = await drive.download(f.id, (got, total) => busy(`Baixando do Drive… ${total ? Math.round(got / total * 100) + '%' : fmtSize(got)}`));

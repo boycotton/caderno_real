@@ -128,7 +128,14 @@ Atalhos com teclado físico: Ctrl+Z / Ctrl+Y, Ctrl+C / Ctrl+X / Ctrl+V, Ctrl+D (
 - No menu **⋮ → Só a S Pen desenha / Dedo também desenha** dá para trocar esse modo. Desligado: um dedo desenha e dois dedos rolam/dão zoom.
 - Pairar a S Pen mostra a área da borracha e a prévia do que vai ser colado.
 
-### Documentos abertos
+### Documentos abertos (como funciona)
+- O PDF fica no Google Drive. Para mostrar e editar, o tablet precisa de uma cópia — o app baixa **uma vez** e guarda.
+- Voltar para a área de trabalho **não fecha** o documento: ele aparece na **barra de tarefas** (embaixo) e volta
+  na hora, na mesma página. Se você editou um arquivo do Drive, ele é **enviado sozinho** ao voltar.
+- Abrir de novo pelo Drive usa a cópia do tablet; só baixa outra vez se o arquivo mudou no Drive.
+- **×** na barra de tarefas (ou na lista ▾ do editor) fecha o documento e apaga a cópia do tablet.
+- **Iniciar** (canto inferior esquerdo): Nova nota, Nova pasta, Abrir PDF do tablet, Configurações.
+
 O campo com o nome do documento na barra (▾) lista os documentos abertos/recentes: toque para trocar, **×** para fechar.
 
 ### Páginas

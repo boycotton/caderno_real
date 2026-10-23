@@ -577,3 +577,16 @@ img, svg { -webkit-user-drag: none; }
   .tb-group { padding: 0 2px; }
   .docs-btn { padding: 0 3px; margin-right: 2px; }
 }
+
+/* barra de tarefas: Iniciar + documentos abertos */
+.tb-start { gap: 6px; padding: 0 10px; font-weight: 700; }
+.start-logo { display: inline-grid; place-items: center; width: 20px; height: 20px; background: #ffecb3; box-shadow: var(--raised); color: #5b4a17; }
+.start-logo .ic { width: 14px; height: 14px; }
+.tasks { flex: 1; min-width: 0; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; padding: 0 4px; }
+.tasks::-webkit-scrollbar { display: none; }
+.task { display: flex; flex: 0 1 190px; min-width: 110px; height: 40px; background: var(--face); box-shadow: var(--raised); }
+.task-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0 6px; background: none; border: 0; font-size: 13px; text-align: left; }
+.task-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-x { width: 28px; flex: none; background: none; border: 0; font-size: 18px; font-weight: 700; }
+.task-x:active, .task-open:active { box-shadow: var(--pressed); }
+.start-menu { min-width: 220px; border-left: 22px solid var(--navy) !important; }
