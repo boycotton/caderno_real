@@ -49,6 +49,7 @@ export function shapeOutline(o) {
     case 'ellipse': return { closed: true, pts: ellipsePoints((l + r) / 2, (t + b) / 2, (r - l) / 2, (b - t) / 2) };
     case 'triangle': return { closed: true, pts: [[(l + r) / 2, t], [r, b], [l, b]] };
     case 'rtriangle': return { closed: true, pts: [[l, t], [r, b], [l, b]] };
+    case 'poly': return { closed: true, pts: o.pts };
     default: return { closed: false, pts: [[x1, y1], [x2, y2]] };
   }
 }
@@ -217,7 +218,7 @@ export function transformObj(o, dx, dy, s = 1, ox = 0, oy = 0, keepId = true) {
   const Y = y => oy + (y - oy) * s + dy;
   const n = { ...o, id: keepId ? o.id : newId() };
   if (o.t === 'stroke') { n.pts = o.pts.map(p => [X(p[0]), Y(p[1]), p[2]]); n.size = o.size * s; }
-  else if (o.t === 'shape') { n.x1 = X(o.x1); n.y1 = Y(o.y1); n.x2 = X(o.x2); n.y2 = Y(o.y2); n.size = Math.max(0.3, o.size * s); }
+  else if (o.t === 'shape') { n.x1 = X(o.x1); n.y1 = Y(o.y1); n.x2 = X(o.x2); n.y2 = Y(o.y2); n.size = Math.max(0.3, o.size * s); if (o.pts) n.pts = o.pts.map(p => [X(p[0]), Y(p[1])]); }
   else if (o.t === 'text') { n.x = X(o.x); n.y = Y(o.y); n.size = o.size * s; }
   return n;
 }

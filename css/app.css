@@ -472,3 +472,48 @@ hr.groove { border-top: 2px solid #808080; border-bottom: 2px solid #fff; margin
 .dx-ico { width: 44px; padding: 0; }
 .dx-ico .ic { width: 20px; height: 20px; }
 
+
+/* ---------- área de trabalho ---------- */
+.home { display: flex; flex-direction: column; overflow: hidden; }
+.desk { flex: 1; min-height: 0; position: relative; padding: calc(10px + env(safe-area-inset-top)) 10px 10px; }
+.desk-icons { display: grid; grid-auto-flow: column; grid-template-rows: repeat(auto-fill, 112px); grid-auto-columns: 104px; gap: 6px; height: 100%; align-content: start; justify-content: start; }
+.desk-icon { background: none; border: 0; box-shadow: none; display: grid; justify-items: center; align-content: start; gap: 6px; padding: 6px 2px; color: #fff; cursor: pointer; }
+.desk-icon .big { width: 52px; height: 48px; filter: drop-shadow(2px 2px 0 rgba(0, 0, 0, .6)); }
+.desk-icon span { font-size: 13px; line-height: 1.2; text-align: center; padding: 1px 3px; max-width: 100px; overflow-wrap: anywhere; }
+.desk-icon:active span, .desk-icon:focus span { background: var(--navy); outline: 1px dotted #ff0; }
+.desk-icon:active .big { filter: brightness(.6) sepia(1) hue-rotate(190deg) saturate(4); }
+.desk-logo { position: absolute; right: 18px; bottom: 12px; font-size: clamp(26px, 4vw, 40px); opacity: .9; pointer-events: none; }
+.files-win { position: absolute; inset: calc(8px + env(safe-area-inset-top)) 8px 8px 120px; display: flex; flex-direction: column; color: #000; z-index: 2; }
+.files-win > .win-body.dx { flex: 1; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+.files-win .dx .d-list { max-height: none; min-height: 0; height: 100%; }
+@media (max-width: 760px) { .files-win { inset: calc(8px + env(safe-area-inset-top)) 6px 6px 6px; } }
+.dx-main.noside { grid-template-columns: 1fr; }
+.dx-pane { grid-template-rows: auto minmax(0, 1fr); }
+.dx-tools .search { width: 200px; flex: none; }
+@media (max-width: 760px) { .dx-tools .search { width: 130px; } }
+
+/* explorador em ícones grandes */
+.d-list.icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 4px; align-content: start; padding: 8px; }
+.d-tile { position: relative; display: grid; justify-items: center; align-content: start; gap: 6px; padding: 8px 4px 6px; cursor: pointer; min-height: 104px; }
+.d-tile .big { width: 50px; height: 46px; }
+.d-tile .d-name { font-size: 13px; line-height: 1.2; text-align: center; max-width: 100%; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; padding: 0 2px; }
+.d-tile:active .d-name, .d-tile:focus .d-name { background: var(--navy); color: #fff; outline: 1px dotted #ff0; }
+.d-tile .d-more { position: absolute; top: 2px; right: 2px; width: 26px; height: 24px; opacity: .75; }
+.d-tile .r-thumb { width: 40px; height: 56px; }
+.d-badge { position: absolute; top: 6px; left: 8px; width: 16px; height: 16px; background: #c00000; color: #fff; font-weight: 700; font-size: 12px; display: grid; place-items: center; border: 1px solid #000; }
+
+/* barra de tarefas */
+.taskbar { flex: none; display: flex; align-items: center; gap: 4px; padding: 3px 4px calc(3px + env(safe-area-inset-bottom)); background: var(--face); box-shadow: inset 0 1px 0 #fff, inset 0 2px 0 var(--hi); z-index: 3; }
+.taskbar .btn { min-height: 40px; min-width: 0; padding: 0 12px; }
+.tb-start b { font-weight: 700; }
+.tb-fill { flex: 1; }
+.tb-tray { display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 8px; box-shadow: var(--thin-in); font-size: 14px; }
+.tray-btn { background: none; border: 0; box-shadow: none; width: 32px; height: 32px; display: grid; place-items: center; padding: 0; }
+@media (max-width: 600px) { .taskbar .btn span { display: none; } }
+
+/* sem seleção de texto / menus do sistema na interface (como um app nativo) */
+html, body { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; }
+input, textarea, [contenteditable] { -webkit-user-select: text; user-select: text; -webkit-touch-callout: default; }
+img, svg { -webkit-user-drag: none; }
+.lock-btn.on { color: #000080; }
+.tray-btn.lock-btn.on { box-shadow: var(--pressed); background: var(--dither); }

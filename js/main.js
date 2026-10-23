@@ -4,10 +4,10 @@ import { store, prefs, setPref, persistStorage } from './store.js';
 import { drawTemplateCanvas, PAPERS, KINDS, SPACINGS, DEFAULT_TPL, pageSize, tplLabel } from './templates.js';
 import { drawObj, newId } from './ink.js';
 import * as drive from './drive.js';
-import { driveExplorer } from './explorer.js';
+import { driveExplorer, ROOTS, BIG } from './explorer.js';
 import { icon, $, $$, h, esc, toast, modal, confirmBox, promptBox, popover, closePopovers, fmtDate, fmtSize } from './ui.js';
 
-const COLORS = ['#1a1a1a', '#1f4fd1', '#d32f2f', '#2e7d32', '#f4846a', '#8e24aa', '#ef6c00', '#00838f', '#795548', '#ffffff'];
+const COLORS = ['#1a1a1a', '#1f4fd1', '#d32f2f', '#2e7d32', '#8e24aa', '#ef6c00', '#ffffff'];
 const MARKER_COLORS = ['#ffd400', '#7ee36f', '#ff86c8', '#6ec6ff', '#ffb74d', '#c792ea'];
 const SIZES = {
   pen: [1, 2.2, 3.5, 6], pencil: [0.8, 1.6, 2.6, 4], marker: [8, 14, 22, 32],
@@ -41,6 +41,10 @@ function init() {
     onPenOnly: () => renderToolbar(),
   });
   window.__caderno = { get ed() { return ed; }, get doc() { return cur; } };
+  setupLock();
+  // app de verdade: nada de selecionar texto da interface nem menu de "copiar/pesquisar"
+  document.addEventListener('contextmenu', e => { if (!e.target.closest('input, textarea, [contenteditable]')) e.preventDefault(); });
+  document.addEventListener('selectstart', e => { if (!e.target.closest?.('input, textarea, [contenteditable]')) e.preventDefault(); });
   showHome();
   persistStorage();
   // Abrir PDF pelo "Abrir com" do sistema (quando o navegador suporta)
@@ -55,7 +59,56 @@ function init() {
   document.addEventListener('visibilitychange', () => { if (document.hidden && cur) saveLocal(); });
 }
 
-// ============================================================ tela inicial
+// ============================================================ trava (não sair do app sem querer)
+// Tela cheia: no Android o primeiro deslize da borda só mostra as barras do sistema, em vez de ir para a
+// tela inicial. O "voltar" fica preso e a tela não apaga.
+let locked = false, wakeLock = null;
+
+function setupLock() {
+  locked = !!prefs().locked;
+  window.addEventListener('popstate', () => {
+    if (!locked) return;
+    history.pushState({ lock: 1 }, '');
+    toast('Travado. Toque no cadeado para destravar.', { ms: 1800 });
+  });
+  // a tela cheia precisa de um toque para (re)entrar; reentra no primeiro toque se o sistema tirou
+  document.addEventListener('pointerup', () => { if (locked) enterLock(); }, true);
+  document.addEventListener('fullscreenchange', paintLock);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && locked) requestWake(); });
+  if (locked) history.pushState({ lock: 1 }, '');
+}
+
+async function requestWake() {
+  try { if ('wakeLock' in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } } catch {}
+}
+
+function enterLock() {
+  const el = document.documentElement;
+  if (!document.fullscreenElement && el.requestFullscreen) el.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+  requestWake();
+}
+
+function toggleLock() {
+  locked = !locked;
+  setPref('locked', locked);
+  if (locked) { history.pushState({ lock: 1 }, ''); enterLock(); toast('Travado', { ms: 1200 }); }
+  else {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    try { wakeLock?.release(); } catch {}
+    wakeLock = null;
+    toast('Destravado', { ms: 1200 });
+  }
+  paintLock();
+}
+
+function paintLock() {
+  for (const b of $$('.lock-btn')) {
+    b.classList.toggle('on', locked);
+    b.innerHTML = icon(locked ? 'lock' : 'unlock', b.classList.contains('tray-btn') ? 'sm' : '');
+  }
+}
+
+// ============================================================ tela inicial (área de trabalho)
 async function showHome() {
   if (cur) { await saveLocal(); }
   cur = null;
@@ -64,34 +117,121 @@ async function showHome() {
   closePopovers();
   const home = $('#home');
   home.innerHTML = `
-    <div class="geo-wrap">
-      <header class="geo-head">
-        <span class="logo">${icon('pen')}</span>
-        <h1 class="wordart">Caderno PDF</h1>
-      </header>
-      <section class="window files-win">
-        <div class="win-title"><span class="win-title-text">${icon('folder', 'sm')} Arquivos</span></div>
+    <div class="desk">
+      <div class="desk-icons" id="desk-icons"></div>
+      <h1 class="wordart desk-logo">Caderno PDF</h1>
+      <section class="window files-win" id="files-win" hidden>
+        <div class="win-title"><span class="win-title-text" id="fw-title"></span>
+          <span class="win-ctrls"><button id="fw-close" title="Fechar">×</button></span></div>
         <div class="win-body" id="home-drive"></div>
       </section>
     </div>
+    <footer class="taskbar">
+      <button class="btn tb-start" id="h-new">${icon('plus', 'sm')}<b>Nova nota</b></button>
+      <button class="btn" id="h-folder">${icon('folderplus', 'sm')}<span>Nova pasta</span></button>
+      <button class="btn" id="h-local">${icon('file', 'sm')}<span>Abrir do tablet</span></button>
+      <span class="tb-fill"></span>
+      <span class="tb-tray"><button class="tray-btn lock-btn" id="h-lock" title="Travar">${icon('unlock', 'sm')}</button><button class="tray-btn" id="h-settings" title="Configurações">${icon('settings', 'sm')}</button><span id="h-clock"></span></span>
+    </footer>
     <input type="file" id="h-file" accept="application/pdf,.pdf" hidden>`;
-  driveExplorer($('#home-drive'), {
-    mode: 'browse',
-    on: {
-      openFile: openDriveFile,
-      newNote: folder => newNoteDialog(drive.isSignedIn() ? folder : undefined),
-      configure: openSettings,
-      openLocal: () => $('#h-file').click(),
-      renderLocal: el => renderRecents(el),
-      pickFolder: title => driveBrowser({ mode: 'folder', title, button: 'Mover para cá' }),
-    },
-  });
+  renderDesktop();
+  $('#fw-close').onclick = closeFilesWin;
+  $('#h-new').onclick = () => newNoteDialog(openFolder());
+  $('#h-folder').onclick = desktopNewFolder;
+  $('#h-local').onclick = () => $('#h-file').click();
+  $('#h-settings').onclick = openSettings;
+  $('#h-lock').onclick = toggleLock;
+  paintLock();
   $('#h-file').onchange = async e => {
     const f = e.target.files[0];
     if (!f) return;
     const bytes = new Uint8Array(await f.arrayBuffer());
     await openFromBytes(bytes, { name: f.name.replace(/\.pdf$/i, ''), source: { t: 'local' } });
   };
+  const clock = () => { const c = $('#h-clock'); if (c) c.textContent = new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }); };
+  clock(); clearInterval(showHome._t); showHome._t = setInterval(clock, 20000);
+  const ow = prefs().openWin;
+  if (ow?.start) openFilesWin(ow.start, ow.path);
+}
+
+const pins = () => prefs().pins || [];
+let filesEx = null;
+
+function renderDesktop() {
+  const box = $('#desk-icons');
+  if (!box) return;
+  box.innerHTML = '';
+  const items = [
+    { art: BIG.drive, name: 'Google Drive', start: ROOTS.root },
+    { art: BIG.shared, name: 'Compartilhados', start: ROOTS.shared },
+    { art: BIG.tablet, name: 'Neste tablet', start: ROOTS.local },
+    ...pins().map(p => ({ art: BIG.folder, name: p.name, start: { id: p.id, name: p.name }, pin: true })),
+  ];
+  for (const it of items) {
+    const el = h(`<button class="desk-icon">${it.art}<span>${esc(it.name)}</span></button>`);
+    el.onclick = () => openFilesWin(it.start);
+    if (it.pin) el.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      popover(el, (pop, close) => {
+        pop.append(menuItem('folder', 'Abrir', () => { close(); openFilesWin(it.start); }));
+        pop.append(menuItem('x', 'Tirar da área de trabalho', () => { close(); setPref('pins', pins().filter(p => p.id !== it.start.id)); renderDesktop(); }));
+      });
+    });
+    box.appendChild(el);
+  }
+}
+
+function pinFolder(f) {
+  if (!pins().some(p => p.id === f.id)) setPref('pins', [...pins(), { id: f.id, name: f.name }]);
+  renderDesktop();
+  toast(`“${f.name}” na área de trabalho`, { kind: 'ok' });
+}
+
+function openFolder() {
+  const w = $('#files-win');
+  if (!w || w.hidden || !filesEx || !drive.isSignedIn()) return undefined;
+  const f = filesEx.current();
+  return f;
+}
+
+function openFilesWin(start, startPath) {
+  const w = $('#files-win');
+  w.hidden = false;
+  setPref('openWin', { start, path: startPath || [start] });
+  $('#fw-title').innerHTML = `${start.id === 'local' ? icon('pages', 'sm') : start.id === 'root' ? icon('drive', 'sm') : icon('folder', 'sm')} <span id="fw-name">${esc(start.name)}</span>`;
+  const body = $('#home-drive');
+  body.className = 'win-body';
+  filesEx = driveExplorer(body, {
+    mode: 'browse', start, startPath,
+    on: {
+      navigate: path => setPref('openWin', { start, path }),
+      openFile: openDriveFile,
+      newNote: folder => newNoteDialog(drive.isSignedIn() ? folder : undefined),
+      configure: openSettings,
+      renderLocal: el => renderRecents(el),
+      pin: pinFolder,
+      title: n => { const t = $('#fw-name'); if (t) t.textContent = n; },
+      pickFolder: title => driveBrowser({ mode: 'folder', title, button: 'Mover para cá' }),
+    },
+  });
+}
+
+function closeFilesWin() {
+  $('#files-win').hidden = true;
+  filesEx = null;
+  setPref('openWin', null);
+}
+
+async function desktopNewFolder() {
+  const n = await promptBox('Nova pasta', 'Nova pasta', { ok: 'Criar' });
+  if (!n) return;
+  try {
+    await drive.signIn();
+    const parent = openFolder() || ROOTS.root;
+    const f = await drive.createFolder(n, parent.id);
+    pinFolder({ id: f.id, name: f.name });
+    filesEx?.reload();
+  } catch (x) { toast('Não foi possível criar a pasta: ' + x.message, { kind: 'err', ms: 6000 }); }
 }
 
 async function renderRecents(list) {
@@ -99,21 +239,17 @@ async function renderRecents(list) {
   list.innerHTML = '';
   if (!docs.length) { list.innerHTML = '<p class="pad muted">Vazio.</p>'; return 0; }
   for (const d of docs) {
-    const src = d.source?.t === 'drive' ? icon('drive', 'sm') : d.source?.t === 'local' ? icon('folder', 'sm') : icon('file', 'sm');
-    const el = h(`<div class="d-row" role="listitem" tabindex="0">
-      <span class="r-thumb"></span>
-      <span class="d-name">${esc(d.name)}${d.dirty ? ' <span class="badge warn">não enviado</span>' : ''}</span>
-      <span class="d-meta">${src}</span>
-      <span class="d-meta d-date">${fmtDate(d.updatedAt)}</span>
-      <button class="btn tiny-btn d-more" title="Opções">${icon('more', 'sm')}</button></div>`);
-    el.addEventListener('click', ev => { if (!ev.target.closest('.d-more')) resumeDoc(d.id); });
-    $('.d-more', el).onclick = ev => popover(ev.currentTarget, (pop, close) => {
+    const el = h(`<div class="d-tile" role="listitem" tabindex="0"><span class="r-thumb"></span><span class="d-name">${esc(d.name)}</span><button class="btn tiny-btn d-more" title="Opções">${icon('more', 'sm')}</button>${d.dirty ? '<span class="d-badge" title="Não enviado ao Drive">!</span>' : ''}</div>`);
+    const menu = anchor => popover(anchor, (pop, close) => {
       pop.append(menuItem('trash', 'Remover deste tablet', async () => {
         close();
-        if (d.dirty && !(await confirmBox('Remover?', 'Há alterações não salvas no Drive. Remover mesmo assim?', { ok: 'Remover', danger: true }))) return;
+        if (d.dirty && !(await confirmBox('Remover?', 'Há alterações não salvas no Drive.', { ok: 'Remover', danger: true }))) return;
         await store.deleteDoc(d.id); renderRecents(list);
       }));
     }, { align: 'right' });
+    el.addEventListener('click', ev => { if (!ev.target.closest('.d-more')) resumeDoc(d.id); });
+    el.addEventListener('contextmenu', ev => { ev.preventDefault(); menu(el); });
+    $('.d-more', el).onclick = ev => menu(ev.currentTarget);
     list.appendChild(el);
     drawRecentThumb($('.r-thumb', el), d);
   }
@@ -306,6 +442,7 @@ function buildEditorChrome() {
       </div>
       <div class="optbar" id="optbar"></div>
       <div class="tb-group tb-right">
+        <button class="icon-btn lock-btn" id="b-lock" title="Travar (tela cheia, não sai do app sem querer)">${icon('unlock')}</button>
         <button class="icon-btn" id="b-spen" title="Só a S Pen desenha">${icon('spen')}</button>
         <button class="icon-btn" id="b-pages" title="Páginas">${icon('pages')}</button>
         <button class="save-btn" id="b-save" title="Salvar">${icon('floppy')}<span id="save-lbl">Salvar</span></button>
@@ -351,6 +488,7 @@ function buildEditorChrome() {
     toast(ed.penOnly ? 'Só a S Pen desenha. Dedo: rolar e zoom.' : 'Dedo também desenha. Dois dedos: rolar e zoom.');
   };
   $('#b-pages').onclick = togglePagePanel;
+  $('#b-lock').onclick = toggleLock;
   $('#b-save').onclick = () => saveDoc();
   $('#b-more').onclick = ev => moreMenu(ev.currentTarget);
   $('#b-addpage').onclick = () => addPageDialog();
@@ -867,23 +1005,23 @@ function openSettings() {
       const p = prefs();
       b.innerHTML = `
         <h4>Google Drive</h4>
-        <p class="muted small">Cole aqui o <b>ID do cliente OAuth</b> que você criou no Google Cloud (passo a passo no guia que veio com o app). É configurado uma vez só e fica salvo neste tablet.</p>
-        <label class="lbl">ID do cliente OAuth<input class="field mono" id="s-cid" placeholder="123456-abc.apps.googleusercontent.com" value="${esc(p.clientId || '')}"></label>
-        <p class="muted small">Endereço deste app (cadastre em “Origens JavaScript autorizadas”): <code>${esc(location.origin)}</code></p>
         <div class="row gap">
-          <button class="btn" id="s-test">${icon('drive', 'sm')} Testar conexão</button>
+          <button class="btn" id="s-test">${icon('drive', 'sm')} Entrar / testar</button>
           <button class="btn" id="s-out">${icon('logout', 'sm')} Sair da conta Google</button>
         </div>
+        <details class="adv"><summary>Avançado</summary>
+          <label class="lbl">ID do cliente OAuth (vazio = padrão do app)<input class="field mono" id="s-cid" value="${esc(p.clientId || '')}"></label>
+        </details>
         <h4>Escrita</h4>
         <label class="switch"><input type="checkbox" id="s-pen" ${p.penOnly ? 'checked' : ''}><span></span>Só a S Pen desenha (o dedo rola e dá zoom)</label>
         <h4>Armazenamento</h4>
         <p class="muted small" id="s-store">…</p>
-        <p class="muted small">Caderno PDF — app pessoal. Usa pdf.js (Mozilla), pdf-lib e perfect-freehand, todos de código aberto.</p>`;
+`;
       $('#s-cid', b).onchange = e => { setPref('clientId', e.target.value.trim()); drive.signOut(); };
       $('#s-pen', b).onchange = e => ed.setPenOnly(e.target.checked);
       $('#s-test', b).onclick = async () => {
         setPref('clientId', $('#s-cid', b).value.trim());
-        try { await drive.signIn(); const f = await drive.listFolder('root'); toast(`Conectado ✓ (${f.length} itens no Meu Drive)`, { kind: 'ok' }); }
+        try { await drive.signIn(); const f = await drive.listFolder('root'); toast(`Conectado (${f.length} itens no Meu Drive)`, { kind: 'ok' }); }
         catch (e) { toast(e.message, { kind: 'err', ms: 6000 }); }
       };
       $('#s-out', b).onclick = () => { drive.signOut(); localStorage.removeItem('caderno.driveUsed'); toast('Você saiu da conta Google.'); };

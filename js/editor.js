@@ -1,6 +1,7 @@
 // Editor de páginas: exibição, zoom, ferramentas e entrada da S Pen.
 import { drawObj, geom, hitObj, inLasso, transformObj, unionBox, simplifyPts, newId } from './ink.js';
 import { drawTemplateCanvas } from './templates.js';
+import { recognize } from './recognize.js';
 import { prefs, setPref } from './store.js';
 
 const GAP = 18, PAD = 18;
@@ -729,7 +730,11 @@ export class Editor {
     const pt = this._pagePoint(e, g.pageIndex);
     if (Math.hypot((pt.x - g.start.x) * this.zoom, (pt.y - g.start.y) * this.zoom) > 4) g.moved = true;
 
-    if (g.obj?.t === 'stroke') {
+    if (g.snapped) {
+      // forma reconhecida: reta/seta seguem a caneta; as outras ficam como foram reconhecidas
+      if (g.obj.kind === 'line' || g.obj.kind === 'arrow') { g.obj = { ...g.obj, x2: pt.x, y2: pt.y }; this._drawLiveObj(g.pageIndex, g.obj); }
+    } else if (g.obj?.t === 'stroke') {
+      this._holdCheck(g, e);
       for (const ce of list) {
         const q = this._pagePoint(ce, g.pageIndex);
         const lastP = g.obj.pts[g.obj.pts.length - 1];
@@ -758,7 +763,16 @@ export class Editor {
     if (e.pointerType === 'pen') this.activePen = null;
     if (!g) return;
     if (g.tool === 'move' || g.tool === 'scale') return this._endMove(g);
+    clearTimeout(g.holdT);
     const p = g.page;
+    if (g.snapped) {
+      this._clearOverlay();
+      if (cancel) return;
+      const n = { ...g.obj, id: newId() };
+      this._setObjs(p, [...p.objs, n]);
+      this._inkAdd(p, n);
+      return;
+    }
     if (g.obj?.t === 'stroke') {
       if (cancel && g.obj.pts.length < 3) { this._clearOverlay(); return; }
       const o = { ...g.obj, id: newId(), pts: simplifyPts(g.obj.pts, 0.3 / Math.max(0.5, this.zoom)) };
@@ -796,8 +810,29 @@ export class Editor {
     }
   }
 
+  // Segurar a caneta parada no fim do traço (~0,6 s) transforma o rabisco em forma perfeita.
+  _holdCheck(g, e) {
+    if (g.tool === 'marker') return;
+    const x = e.clientX, y = e.clientY;
+    if (g.hold && Math.hypot(x - g.hold.x, y - g.hold.y) < 7) return;
+    g.hold = { x, y };
+    clearTimeout(g.holdT);
+    g.holdT = setTimeout(() => this._snapShape(g), 600);
+  }
+
+  _snapShape(g) {
+    if (this.gesture !== g || g.snapped || g.obj?.t !== 'stroke') return;
+    const r = recognize(g.obj.pts);
+    if (!r) return;
+    g.snapped = true;
+    g.obj = { t: 'shape', color: g.obj.color, size: Math.max(0.8, g.obj.size * (g.tool === 'pencil' ? 0.9 : 0.75)), fill: null, ...r };
+    this._drawLiveObj(g.pageIndex, g.obj);
+    try { navigator.vibrate?.(12); } catch {}
+  }
+
   _cancelDraw() {
     const g = this.gesture;
+    if (g) clearTimeout(g.holdT);
     if (g?.tool === 'eraser' && g.removed.size) { g.page.objs = g.before; this._refreshPage(g.page); }
     if (g?.tool === 'move' || g?.tool === 'scale') { this.sel.moving = false; this._refreshPage(this.pageById(this.sel.pageId)); this._placeSelection(); }
     this.gesture = null;

@@ -39,36 +39,9 @@ Duas opções gratuitas — escolha uma:
 
 ## 2. Google Drive
 
-### Sem configurar nada (funciona na hora)
-- **Abrir arquivo (tablet / Drive)** abre o seletor do Android: toque em ☰ → **Drive** e escolha o PDF.
-- **Salvar → Enviar ao app Drive** abre a lista de apps: escolha **Drive** e a pasta.
-  Isso cria um arquivo novo no Drive (não substitui o original).
-
-### Conexão direta (opcional, grátis, uma vez, ~10 minutos)
-Com ela o app mostra e cria as pastas do Drive e **substitui o arquivo original** ao salvar.
-**Não é pago:** a Google Drive API não cobra nada e não precisa de cartão nem de conta de faturamento.
-O "free trial" de US$ 300 do Google Cloud é para serviços pagos (servidores etc.) — não ative, não é necessário.
-
-
-Como o app é só seu, você mesmo cria a "chave" de acesso no Google Cloud (grátis):
-
-1. Entre em <https://console.cloud.google.com> com a conta Google do seu Drive.
-2. No topo, **Selecionar projeto → Novo projeto** → nome `Caderno` → Criar.
-3. Menu **APIs e serviços → Biblioteca** → procure **Google Drive API** → **Ativar**.
-4. Menu **Google Auth Platform** (ou *Tela de permissão OAuth*) → **Começar**:
-   - Nome do app: `Caderno`; e-mail de suporte: o seu.
-   - Público: **Externo**.
-   - Contato: o seu e-mail → Criar.
-5. Em **Público (Audience)**, deixe em **Teste** e em *Usuários de teste* clique **Add users** e coloque **o seu Gmail**.
-6. Em **Acesso a dados (Data access) → Adicionar escopos**, marque `.../auth/drive` (Google Drive, ver e editar todos os arquivos) → Atualizar → Salvar.
-7. Em **Clientes → Criar cliente**:
-   - Tipo: **Aplicativo da Web**.
-   - **Origens JavaScript autorizadas → Adicionar URI**: o endereço do passo 1, **só a origem**, sem barra no fim e sem caminho.
-     Ex.: `https://caderno-arthur.netlify.app` ou `https://SEU-USUARIO.github.io`
-   - Criar → **copie o "ID do cliente"** (termina em `.apps.googleusercontent.com`).
-
-Na primeira vez que entrar, o Google mostra **"O Google não verificou este app"** — é normal para apps
-pessoais em modo de teste. Toque em **Continuar**. Ninguém além dos usuários de teste que você adicionou consegue usar.
+Já vem configurado (projeto `caderno` no Google Cloud da conta ar.barbosademiranda@gmail.com, modo Teste,
+origem autorizada `https://boycotton.github.io`). É grátis: a Drive API não cobra e não pede cartão.
+Na primeira vez o Google mostra "O Google não verificou este app" → **Continuar**.
 
 ---
 
@@ -85,6 +58,14 @@ pessoais em modo de teste. Toque em **Continuar**. Ninguém além dos usuários 
 > Também funciona no Samsung Internet: menu **☰ → Adicionar página a → Tela inicial**.
 
 ## 4. Como usar
+
+### Área de trabalho
+- Ícones: **Google Drive**, **Compartilhados**, **Neste tablet** e as pastas que você fixar.
+- **Nova pasta** (barra de baixo) cria a pasta no Drive e já coloca o ícone na área de trabalho.
+- Em qualquer pasta do Drive: **⋮ → Fixar na área de trabalho**. Segurar o ícone fixado → tirar.
+- **Cadeado** (barra de baixo e barra de ferramentas): tela cheia, prende o "voltar" e mantém a tela ligada,
+  para não sair do app esbarrando o braço. Para bloqueio total use também o recurso do Android
+  *Configurações → Segurança → Fixar apps*.
 
 ### Abrir e criar
 - **Nova nota**: escolha o tipo de folha (Quadriculado, Pautado, Pontilhado, Milimetrado, Cornell, Em branco),
@@ -108,6 +89,7 @@ pessoais em modo de teste. Toque em **Continuar**. Ninguém além dos usuários 
 | Lápis | Traço mais fino, tom grafite levemente transparente |
 | Marca-texto | Largo e translúcido |
 | Borracha | Apaga o traço inteiro que tocar. **Segurar o botão da S Pen = borracha temporária** |
+| Reconhecer forma | Com caneta ou lápis: desenhe e **segure a caneta parada** no fim (~0,6 s). Vira reta, seta, círculo, elipse, retângulo, triângulo ou polígono. Reta/seta continuam seguindo a caneta até soltar |
 | Formas | Linha, seta, retângulo, elipse, triângulo e triângulo retângulo. Linhas se alinham a cada 15°; retângulo/elipse quase quadrados viram quadrado/círculo perfeitos. "Preencher" deixa a forma com fundo translúcido |
 | Texto | Toque na página e digite (o teclado Samsung também aceita escrita à mão). Toque num texto existente para editar |
 | Laço | Circule itens (ou toque em um) para selecionar |

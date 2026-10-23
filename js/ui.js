@@ -49,6 +49,8 @@ const P = {
   cloudoff: '<path d="M3 3l18 18"/><path d="M8.5 8.4A6 6 0 0117.7 8 4 4 0 0119.6 15M16 18H7a4.5 4.5 0 01-1.6-8.7"/>',
   logout: '<path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/>',
   rename: '<path d="M4 20h16"/><path d="M14.5 4.5l3 3L8 17H5v-3z"/>',
+  lock: '<rect x="5" y="11" width="14" height="10" rx="1"/><path d="M8 11V7.5a4 4 0 018 0V11"/><path d="M12 15v2"/>',
+  unlock: '<rect x="5" y="11" width="14" height="10" rx="1"/><path d="M8 11V7.5a4 4 0 017.6-1.7"/>',
 };
 
 export function icon(name, cls = '') {
