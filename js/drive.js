@@ -56,6 +56,7 @@ export async function signIn({ silent = false } = {}) {
         try { localStorage.setItem('caderno.token', JSON.stringify(token)); } catch {}
         localStorage.setItem('caderno.driveUsed', '1');
         p.res(token.access_token);
+        window.dispatchEvent(new Event('drive-signed-in'));
       },
       error_callback: e => {
         const p = pending; pending = null;

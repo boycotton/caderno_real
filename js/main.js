@@ -5,6 +5,7 @@ import { drawTemplateCanvas, PAPERS, KINDS, SPACINGS, DEFAULT_TPL, pageSize, tpl
 import { drawObj, newId } from './ink.js';
 import * as drive from './drive.js';
 import { driveExplorer, ROOTS, BIG } from './explorer.js';
+import { Learn } from './learn.js';
 import { icon, $, $$, h, esc, toast, modal, confirmBox, promptBox, popover, closePopovers, fmtDate, fmtSize } from './ui.js';
 
 const COLORS = ['#1a1a1a', '#1f4fd1', '#d32f2f', '#2e7d32', '#8e24aa', '#ef6c00', '#ffffff'];
@@ -20,6 +21,7 @@ const TOOLS = [
 const SHAPES = [['line', 'Linha'], ['arrow', 'Seta'], ['rect', 'Retângulo'], ['ellipse', 'Elipse / círculo'], ['triangle', 'Triângulo'], ['rtriangle', 'Triângulo retângulo']];
 
 let ed;           // Editor
+let learn;        // modo あ
 let cur = null;   // documento aberto
 let saving = false;
 let autosaveTimer;
@@ -39,14 +41,22 @@ function init() {
     onClip: () => renderToolbar(),
     onToast: m => toast(m, { ms: 4200 }),
     onPenOnly: () => renderToolbar(),
+    onLearn: (i, pt, e, mode) => {
+      if (!learn) return;
+      if (i < 0 || !pt || !cur) return learn.hide();
+      const a = ed.toStage(i, pt.x, pt.y);
+      learn.at(cur, i, ed.pages[i], pt, { x: a.x, y: a.y - 14, h: 28 }, { sticky: mode === 'drag' });
+    },
   });
-  window.__caderno = { get ed() { return ed; }, get doc() { return cur; } };
+  learn = new Learn(ed, $('#stage'));
+  window.__caderno = { get ed() { return ed; }, get doc() { return cur; }, get learn() { return learn; } };
   setupLock();
   // app de verdade: nada de selecionar texto da interface nem menu de "copiar/pesquisar"
   document.addEventListener('contextmenu', e => { if (!e.target.closest('input, textarea, [contenteditable]')) e.preventDefault(); });
   document.addEventListener('selectstart', e => { if (!e.target.closest?.('input, textarea, [contenteditable]')) e.preventDefault(); });
   showHome();
   persistStorage();
+  if (drive.isSignedIn()) setTimeout(importLibrary, 1500);
   // Abrir PDF pelo "Abrir com" do sistema (quando o navegador suporta)
   if ('launchQueue' in window) window.launchQueue.setConsumer(async lp => {
     const fh = lp.files?.[0];
@@ -107,6 +117,34 @@ function paintLock() {
     b.innerHTML = icon(locked ? 'lock' : 'unlock', b.classList.contains('tray-btn') ? 'sm' : '');
   }
 }
+
+// ============================================================ biblioteca japonesa
+// Livros de domínio público (Aozora Bunko) que vêm com o app: na primeira vez que entrar no Drive,
+// vão para a pasta "Japonês" (usa a que já existir; se não houver, cria).
+let libBusy = false;
+async function importLibrary() {
+  if (libBusy || !drive.isSignedIn()) return;
+  const idx = await fetch('biblioteca/japones/index.json').then(r => r.json()).catch(() => null);
+  if (!idx || prefs().libJp === idx.version) return;
+  libBusy = true;
+  try {
+    const root = await drive.listFolder('root');
+    const norm = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+    let folder = root.find(f => f.mimeType === drive.FOLDER_MIME && ['japones', 'japanese', '日本語', 'japao', 'japonesa'].includes(norm(f.name)));
+    if (!folder) folder = await drive.createFolder('Japonês', 'root');
+    const have = new Set((await drive.listFolder(folder.id)).map(f => f.name));
+    const todo = idx.files.filter(f => !have.has(f));
+    for (const [k, name] of todo.entries()) {
+      toast(`Livros japoneses → “${folder.name}”: ${k + 1}/${todo.length}`, { ms: 0 });
+      const bytes = new Uint8Array(await fetch('biblioteca/japones/' + encodeURIComponent(name)).then(r => r.arrayBuffer()));
+      await drive.createFile(name, folder.id, bytes);
+    }
+    setPref('libJp', idx.version);
+    if (todo.length) { toast(`${todo.length} livros em “${folder.name}” no Drive`, { kind: 'ok', ms: 5000 }); filesEx?.reload(); }
+  } catch (e) { toast('Não foi possível copiar os livros: ' + e.message, { kind: 'err', ms: 6000 }); }
+  finally { libBusy = false; }
+}
+window.addEventListener('drive-signed-in', () => setTimeout(importLibrary, 500));
 
 // ============================================================ tela inicial (área de trabalho)
 async function showHome() {
@@ -320,6 +358,7 @@ async function resumeDoc(id) {
 }
 
 function enterEditor() {
+  learn?.hide();
   $('#home').hidden = true;
   $('#editor').hidden = false;
   $('#doc-title').textContent = cur.name;
@@ -442,6 +481,7 @@ function buildEditorChrome() {
       </div>
       <div class="optbar" id="optbar"></div>
       <div class="tb-group tb-right">
+        <button class="icon-btn learn-btn" id="b-learn" title="Modo aprender língua: toque ou paire a caneta numa palavra japonesa do PDF">あ</button>
         <button class="icon-btn lock-btn" id="b-lock" title="Travar (tela cheia, não sai do app sem querer)">${icon('unlock')}</button>
         <button class="icon-btn" id="b-spen" title="Só a S Pen desenha">${icon('spen')}</button>
         <button class="icon-btn" id="b-pages" title="Páginas">${icon('pages')}</button>
@@ -468,6 +508,7 @@ function buildEditorChrome() {
   for (const [id, ic, label] of TOOLS) {
     const b = h(`<button class="tool" data-tool="${id}" title="${label}">${icon(ic)}<span class="tool-dot"></span></button>`);
     b.onclick = () => {
+      if (ed.learn) { ed.setLearn(false); learn.hide(); }
       if (ed.tool === id && id === 'shape') return shapeMenu(b);
       ed.setTool(id);
     };
@@ -489,6 +530,7 @@ function buildEditorChrome() {
   };
   $('#b-pages').onclick = togglePagePanel;
   $('#b-lock').onclick = toggleLock;
+  $('#b-learn').onclick = () => { ed.setLearn(!ed.learn); if (!ed.learn) learn.hide(); renderToolbar(); };
   $('#b-save').onclick = () => saveDoc();
   $('#b-more').onclick = ev => moreMenu(ev.currentTarget);
   $('#b-addpage').onclick = () => addPageDialog();
@@ -507,7 +549,7 @@ function renderToolbar() {
   if (!ed) return;
   for (const b of $$('#tools .tool')) {
     const t = b.dataset.tool;
-    b.classList.toggle('on', ed.tool === t);
+    b.classList.toggle('on', !ed.learn && ed.tool === t);
     const dot = $('.tool-dot', b);
     const c = ed.cfg[t]?.color;
     dot.style.background = c || 'transparent';
@@ -524,6 +566,11 @@ function renderOptbar() {
   const ob = $('#optbar');
   const t = ed.tool;
   ob.innerHTML = '';
+  $('#b-learn')?.classList.toggle('on', !!ed.learn);
+  if (ed.learn) {
+    ob.innerHTML = `<span class="hint"><b class="jp-glyph">あ</b> Toque ou paire a caneta numa palavra do PDF</span>`;
+    return;
+  }
   if (t === 'paste') {
     ob.innerHTML = `<span class="hint">${icon('paste', 'sm')} Toque para colar (cada toque = 1 cópia)</span>`;
     return;

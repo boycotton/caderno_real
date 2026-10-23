@@ -96,6 +96,21 @@ Na primeira vez o Google mostra "O Google não verificou este app" → **Continu
 
 Tocar de novo no botão de Formas abre a lista de formas.
 
+### Modo あ (aprender japonês)
+- Botão **あ** na barra: liga/desliga.
+- Com ele ligado, **paire a S Pen** sobre uma palavra japonesa do PDF (ou toque nela) e aparece a definição,
+  como no Rikaikun: palavra, leitura, significados (inglês, do JMdict), a forma do verbo/adjetivo
+  (ex.: 食べなかった → 食べる, passado negativo) e os kanji com significado (em português quando houver),
+  leituras on/kun, traços e nível JLPT.
+- Funciona com o texto que já existe no PDF (sem OCR): PDFs escaneados não têm texto.
+- O dicionário é baixado aos poucos e fica guardado no tablet para usar offline.
+- Dados: JMdict e KANJIDIC2 © EDRDG, licença CC BY-SA 4.0.
+
+### Biblioteca japonesa
+Na primeira vez que você entra no Google Drive, o app coloca na sua pasta **Japonês** (ou cria uma)
+18 livros do Aozora Bunko (domínio público) diagramados com furigana — de contos curtos (蜘蛛の糸,
+ごん狐, 注文の多い料理店) até 坊っちゃん e 銀河鉄道の夜. Eles têm texto de verdade, então o modo あ funciona neles.
+
 ### Copiar e colar rápido
 1. Selecione com o **Laço**. Aparece o menu: **Copiar · Recortar · Duplicar · Cor · Carimbo · Excluir**.
 2. Arraste a seleção para mover; puxe a **bolinha azul** do canto para redimensionar.

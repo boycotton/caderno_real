@@ -1,0 +1,4 @@
+Dicionário do modo あ: dados derivados do JMdict e do KANJIDIC2, propriedade do
+Electronic Dictionary Research and Development Group (EDRDG), usados conforme a licença
+do grupo (Creative Commons Attribution-ShareAlike 4.0). https://www.edrdg.org/edrdg/licence.html
+Fonte dos arquivos: pacote jamdict-data (PyPI). Estes arquivos derivados seguem a mesma licença CC BY-SA 4.0.

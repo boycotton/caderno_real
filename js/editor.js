@@ -436,6 +436,7 @@ export class Editor {
     v.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch' && !this.ptrs.has(e.pointerId)) this._clearOverlay(); });
     v.addEventListener('contextmenu', e => e.preventDefault());
     v.addEventListener('scroll', () => {
+      if (this._hl) { this._hl = null; this._clearOverlay(); this.hooks.onLearn?.(-1); }
       this._scheduleRender();
       this._placeSelMenu();
       clearTimeout(this._pt); this._pt = setTimeout(() => this._emitPage(), 80);
@@ -637,8 +638,14 @@ export class Editor {
     this.gesture = null;
     if (!g) return;
     if (g.mode === 'pinch') { this._commitPinch(); this._placeSelMenu(); return; }
-    // inércia
     const h = g.hist;
+    if (this.learn && h.length && Math.hypot(h[h.length - 1].x - h[0].x, h[h.length - 1].y - h[0].y) < 8 && performance.now() - h[0].t < 400) {
+      const ev = { clientX: h[0].x, clientY: h[0].y };
+      const i = this._pageAtEvent(ev);
+      this.hooks.onLearn?.(i, i >= 0 ? this._pagePoint(ev, i) : null, ev, 'tap');
+      return;
+    }
+    // inércia
     if (h.length >= 2) {
       const a = h[0], b = h[h.length - 1];
       const dt = b.t - a.t;
@@ -669,6 +676,7 @@ export class Editor {
   _effectiveTool(e) {
     // botão lateral da S Pen (ou ponta borracha) = borracha temporária
     if (e.pointerType === 'pen' && ((e.buttons & 2) || (e.buttons & 32) || e.button === 5)) return 'eraser';
+    if (this.learn) return 'learn';
     return this.tool;
   }
 
@@ -693,6 +701,12 @@ export class Editor {
       if (tool !== 'paste') this.clearSelection();
     }
     if (this.textEd) { this._closeText(); if (tool === 'text') { this.gesture = { kind: 'draw', tool: 'noop', pointerId: e.pointerId, ptrType: e.pointerType }; return; } }
+    if (tool === 'learn') {
+      this.gesture = { kind: 'draw', tool: 'learn', pointerId: e.pointerId, ptrType: e.pointerType };
+      if (i >= 0) this.hooks.onLearn?.(i, this._pagePoint(e, i), e, 'tap');
+      else this.hooks.onLearn?.(-1);
+      return;
+    }
     if (i < 0) { this.gesture = { kind: 'draw', tool: 'noop', pointerId: e.pointerId, ptrType: e.pointerType }; return; }
 
     const p = this.pages[i];
@@ -724,6 +738,7 @@ export class Editor {
   _drawMove(e) {
     const g = this.gesture;
     if (g.tool === 'noop') return;
+    if (g.tool === 'learn') { const i = this._pageAtEvent(e); if (i >= 0) this.hooks.onLearn?.(i, this._pagePoint(e, i), e, 'drag'); return; }
     if (g.tool === 'move' || g.tool === 'scale') return this._moveSel(e);
     const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
     const list = evs.length ? evs : [e];
@@ -929,6 +944,13 @@ export class Editor {
 
   _hover(e) {
     const i = this._pageAtEvent(e);
+    if (this.learn && e.pointerType === 'pen' && this._effectiveTool(e) === 'learn') {
+      const now = performance.now();
+      if (now - (this._lh || 0) < 90) return;
+      this._lh = now;
+      if (i >= 0) this.hooks.onLearn?.(i, this._pagePoint(e, i), e, 'hover');
+      return;
+    }
     if (i < 0) { this._clearOverlay(); return; }
     const t = this._effectiveTool(e);
     if (t === 'eraser') this._drawEraserCursor(i, this._pagePoint(e, i));
@@ -943,6 +965,33 @@ export class Editor {
     const s = this.stamp;
     for (const o of s.objs) drawObj(ctx, transformObj(o, pt.x - s.w / 2, pt.y - s.h / 2));
     ctx.restore();
+  }
+
+  // ---------------- modo あ ----------------
+  setLearn(v) {
+    this.learn = !!v;
+    if (!v) this.drawHighlight(-1, []);
+    this.hooks.onTool?.();
+  }
+
+  drawHighlight(i, rects) {
+    this._clearOverlay();
+    this._hl = i >= 0 && rects.length ? { i, rects } : null;
+    if (!this._hl) return;
+    const ctx = this._overlayFor(i);
+    ctx.save();
+    ctx.fillStyle = 'rgba(255, 230, 0, .38)';
+    for (const r of rects) ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = '#d00000';
+    for (const r of rects) ctx.fillRect(r.x, r.y + r.h - Math.max(1, r.h * 0.07), r.w, Math.max(1, r.h * 0.07));
+    ctx.restore();
+  }
+
+  // ponto da página -> coordenadas do palco (para posicionar o balão)
+  toStage(i, x, y) {
+    const L = this.layout[i];
+    const vr = this.viewer.getBoundingClientRect(), sr = this.stage.getBoundingClientRect();
+    return { x: L.x + x * this.zoom - this.viewer.scrollLeft + (vr.left - sr.left), y: L.y + y * this.zoom - this.viewer.scrollTop + (vr.top - sr.top) };
   }
 
   // ---------------- seleção ----------------

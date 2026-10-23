@@ -517,3 +517,25 @@ input, textarea, [contenteditable] { -webkit-user-select: text; user-select: tex
 img, svg { -webkit-user-drag: none; }
 .lock-btn.on { color: #000080; }
 .tray-btn.lock-btn.on { box-shadow: var(--pressed); background: var(--dither); }
+
+/* ---------- modo あ (dicionário japonês) ---------- */
+.learn-btn { font-family: "Noto Sans JP", "Noto Sans CJK JP", "Hiragino Sans", "Yu Gothic", sans-serif; font-size: 20px; font-weight: 700; line-height: 1; }
+.jp-glyph { font-family: "Noto Sans JP", "Noto Sans CJK JP", sans-serif; }
+.jp-pop {
+  position: absolute; z-index: 30; max-height: 58%; overflow-y: auto; padding: 8px 10px; background: #ffffe1; color: #000;
+  border: 1px solid #000; box-shadow: 3px 3px 0 rgba(0, 0, 0, .45); font-size: 14px; line-height: 1.35;
+  font-family: "Noto Sans JP", "Noto Sans CJK JP", system-ui, sans-serif; -webkit-user-select: none; user-select: none;
+}
+.jp-e { padding: 4px 0 6px; border-bottom: 1px dotted #a0a080; }
+.jp-e:last-of-type { border-bottom: 0; }
+.jp-w { font-size: 22px; font-weight: 700; color: #000080; }
+.jp-r { font-size: 16px; color: #8b0000; margin-left: 2px; }
+.jp-c { display: inline-block; margin-left: 6px; padding: 0 4px; font-size: 11px; background: #008000; color: #fff; vertical-align: 3px; }
+.jp-why { display: block; font-size: 12px; color: #555; }
+.jp-e ol { margin: 3px 0 0; padding-left: 20px; }
+.jp-e li i { color: #666; font-size: 12px; }
+.jp-ks { display: grid; gap: 6px; margin-top: 6px; padding-top: 6px; border-top: 2px solid #000080; }
+.jp-k { display: flex; gap: 10px; align-items: flex-start; }
+.jp-kc { font-size: 42px; line-height: 1; width: 52px; height: 52px; display: grid; place-items: center; background: #fff; box-shadow: var(--field); flex: none; }
+.jp-kd { font-size: 13px; }
+.jp-meta { color: #555; font-size: 12px; }
