@@ -1,5 +1,5 @@
 // Editor de páginas: exibição, zoom, ferramentas e entrada da S Pen.
-import { drawObj, geom, hitObj, inLasso, transformObj, unionBox, simplifyPts, newId } from './ink.js';
+import { drawObj, geom, hitObj, inLasso, transformObj, unionBox, simplifyPts, newId, TOOL_STYLE } from './ink.js';
 import { drawTemplateCanvas } from './templates.js';
 import { recognize } from './recognize.js';
 import { prefs, setPref } from './store.js';
@@ -60,6 +60,7 @@ export class Editor {
     const prev = keepView ? { top: this.viewer.scrollTop, left: this.viewer.scrollLeft, zoom: this.zoom, fit: this.fitMode } : null;
     this._closeText(true);
     this.clearSelection();
+    this._endShapeEdit();
     for (const v of this.views.values()) this._dropView(v, true);
     this.views.clear();
     this.sheet.innerHTML = '';
@@ -139,6 +140,7 @@ export class Editor {
     for (const [id, v] of this.views) if (!alive.has(id)) { this._dropView(v, true); v.el.remove(); this.views.delete(id); }
     this._placeSelection();
     this._placeText();
+    this._placeShapeEdit();
   }
 
   _onResize() {
@@ -347,8 +349,8 @@ export class Editor {
   canUndo() { return this.undoStack.length > 0; }
   canRedo() { return this.redoStack.length > 0; }
 
-  undo() { this._closeText(); this._apply(this.undoStack, this.redoStack, 'before'); }
-  redo() { this._closeText(); this._apply(this.redoStack, this.undoStack, 'after'); }
+  undo() { this._closeText(); this._endShapeEdit(); this._apply(this.undoStack, this.redoStack, 'before'); }
+  redo() { this._closeText(); this._endShapeEdit(); this._apply(this.redoStack, this.undoStack, 'after'); }
 
   _apply(from, to, which) {
     const a = from.pop();
@@ -409,6 +411,7 @@ export class Editor {
   // ---------------- ferramentas ----------------
   setTool(t, opts = {}) {
     this._closeText();
+    this._endShapeEdit();
     if (t !== 'lasso' && !opts.keepSel) this.clearSelection();
     if (t === 'paste') this.stamp = opts.stamp || this.clip;
     else this.stamp = null;
@@ -430,7 +433,10 @@ export class Editor {
   _bind() {
     const v = this.viewer;
     v.addEventListener('pointerdown', e => this._down(e));
-    v.addEventListener('pointermove', e => this._move(e));
+    // pointerrawupdate chega antes do pointermove (menos atraso da caneta); usado só durante o traço
+    this._raw = 'onpointerrawupdate' in window;
+    if (this._raw) v.addEventListener('pointerrawupdate', e => { const g = this.gesture; if (g?.kind === 'draw' && g.obj?.t === 'stroke' && !g.snapped && g.pointerId === e.pointerId) this._move(e, true); });
+    v.addEventListener('pointermove', e => { const g = this.gesture; if (this._raw && g?.kind === 'draw' && g.obj?.t === 'stroke' && !g.snapped && g.pointerId === e.pointerId) return; this._move(e); });
     v.addEventListener('pointerup', e => this._up(e));
     v.addEventListener('pointercancel', e => this._up(e, true));
     v.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch' && !this.ptrs.has(e.pointerId)) this._clearOverlay(); });
@@ -480,7 +486,14 @@ export class Editor {
   _touchCount() { let n = 0; for (const p of this.ptrs.values()) if (p.type === 'touch') n++; return n; }
 
   _down(e) {
-    if (e.target.closest('.text-ed, .sel-handle')) return;
+    if (e.target.closest('.text-ed, .sel-handle, .sh-handle')) return;
+    // tocar fora das alças confirma a forma ajustada (e esse toque não desenha)
+    if (this._shEdit && (e.pointerType !== 'touch' || !this.penOnly)) {
+      this._endShapeEdit();
+      this.gesture = { kind: 'draw', tool: 'noop', pointerId: e.pointerId, ptrType: e.pointerType };
+      this.ptrs.set(e.pointerId, { id: e.pointerId, type: e.pointerType, x: e.clientX, y: e.clientY });
+      return;
+    }
     if (e.pointerType === 'pen' && !this.penOnly && !prefs().penAuto) {
       // primeira vez que a S Pen é usada: o dedo passa a só rolar/zoom
       setPref('penAuto', true);
@@ -643,6 +656,7 @@ export class Editor {
       const ev = { clientX: h[0].x, clientY: h[0].y };
       const i = this._pageAtEvent(ev);
       this.hooks.onLearn?.(i, i >= 0 ? this._pagePoint(ev, i) : null, ev, 'tap');
+      this.hooks.onLearn?.(0, null, ev, 'up');
       return;
     }
     // inércia
@@ -777,6 +791,7 @@ export class Editor {
     this.gesture = null;
     if (e.pointerType === 'pen') this.activePen = null;
     if (!g) return;
+    if (g.tool === 'learn') { this.hooks.onLearn?.(0, null, e, 'up'); return; }
     if (g.tool === 'move' || g.tool === 'scale') return this._endMove(g);
     clearTimeout(g.holdT);
     const p = g.page;
@@ -786,6 +801,7 @@ export class Editor {
       const n = { ...g.obj, id: newId() };
       this._setObjs(p, [...p.objs, n]);
       this._inkAdd(p, n);
+      if (n.kind === 'curve' || n.kind === 'line' || n.kind === 'arrow') this._startShapeEdit(p, n.id);
       return;
     }
     if (g.obj?.t === 'stroke') {
@@ -829,10 +845,10 @@ export class Editor {
   _holdCheck(g, e) {
     if (g.tool === 'marker') return;
     const x = e.clientX, y = e.clientY;
-    if (g.hold && Math.hypot(x - g.hold.x, y - g.hold.y) < 7) return;
+    if (g.hold && Math.hypot(x - g.hold.x, y - g.hold.y) < 5) return;
     g.hold = { x, y };
     clearTimeout(g.holdT);
-    g.holdT = setTimeout(() => this._snapShape(g), 600);
+    g.holdT = setTimeout(() => this._snapShape(g), 700);
   }
 
   _snapShape(g) {
@@ -886,6 +902,7 @@ export class Editor {
 
   // ---------- overlay (pré-visualização ao vivo) ----------
   _clearOverlay() {
+    this.overlay.style.opacity = '';
     const c = this.octx;
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.clearRect(0, 0, this.overlay.width, this.overlay.height);
@@ -898,19 +915,37 @@ export class Editor {
     return this.octx;
   }
 
+  // Traço ao vivo: desenha só o trecho novo, na hora (sem esperar o próximo quadro e sem refazer o traço inteiro).
+  // A opacidade do lápis/marca-texto vai no próprio canvas da camada para as emendas não escurecerem.
   _drawLive() {
-    if (this._liveRaf) return;
-    this._liveRaf = requestAnimationFrame(() => {
-      this._liveRaf = 0;
-      const g = this.gesture;
-      if (!g?.obj || g.obj.t !== 'stroke') return;
-      const o = g.pred?.length ? { ...g.obj, pts: g.obj.pts.concat(g.pred) } : { ...g.obj };
-      this._drawLiveObj(g.pageIndex, o);
-    });
+    const g = this.gesture;
+    if (!g?.obj || g.obj.t !== 'stroke') return;
+    const o = g.obj, pts = o.pts;
+    const st = TOOL_STYLE[o.tool] || TOOL_STYLE.pen;
+    if (!g.liveN) {
+      this._clearOverlay();
+      this.overlay.style.opacity = st.opacity;
+      g.liveN = 0;
+    }
+    const ctx = this._overlayFor(g.pageIndex);
+    ctx.strokeStyle = ctx.fillStyle = o.color;
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    const th = o.sim ? st.thinning * 0.6 : st.thinning;
+    const wid = pr => Math.max(0.35, o.size * 2 * (0.5 - th * (0.5 - (o.sim ? 0.5 : pr))));
+    if (g.liveN === 0 && pts.length) {
+      ctx.beginPath(); ctx.arc(pts[0][0], pts[0][1], wid(pts[0][2]) / 2, 0, Math.PI * 2); ctx.fill();
+      g.liveN = 1;
+    }
+    for (let k = Math.max(1, g.liveN); k < pts.length; k++) {
+      ctx.lineWidth = wid((pts[k - 1][2] + pts[k][2]) / 2);
+      ctx.beginPath(); ctx.moveTo(pts[k - 1][0], pts[k - 1][1]); ctx.lineTo(pts[k][0], pts[k][1]); ctx.stroke();
+    }
+    g.liveN = pts.length;
   }
 
   _drawLiveObj(i, o) {
     this._clearOverlay();
+    if (this.gesture) this.gesture.liveN = 0;
     const ctx = this._overlayFor(i);
     drawObj(ctx, o);
   }
@@ -944,13 +979,7 @@ export class Editor {
 
   _hover(e) {
     const i = this._pageAtEvent(e);
-    if (this.learn && e.pointerType === 'pen' && this._effectiveTool(e) === 'learn') {
-      const now = performance.now();
-      if (now - (this._lh || 0) < 90) return;
-      this._lh = now;
-      if (i >= 0) this.hooks.onLearn?.(i, this._pagePoint(e, i), e, 'hover');
-      return;
-    }
+    if (this.learn) return;
     if (i < 0) { this._clearOverlay(); return; }
     const t = this._effectiveTool(e);
     if (t === 'eraser') this._drawEraserCursor(i, this._pagePoint(e, i));
@@ -965,6 +994,69 @@ export class Editor {
     const s = this.stamp;
     for (const o of s.objs) drawObj(ctx, transformObj(o, pt.x - s.w / 2, pt.y - s.h / 2));
     ctx.restore();
+  }
+
+  // ---------------- ajuste de forma reconhecida (alças) ----------------
+  // Reta/seta: 2 pontas. Curva: início, meio e fim. Arraste as bolinhas; tocar fora confirma.
+  _startShapeEdit(p, id) {
+    this._endShapeEdit();
+    const v = this.views.get(p.id);
+    if (!v) return;
+    const o = p.objs.find(x => x.id === id);
+    if (!o) return;
+    const keys = o.kind === 'curve' ? [['x1', 'y1'], ['cx', 'cy'], ['x2', 'y2']] : [['x1', 'y1'], ['x2', 'y2']];
+    const hs = keys.map(([kx, ky], n) => {
+      const el = document.createElement('div');
+      el.className = 'sh-handle' + (kx === 'cx' ? ' mid' : '');
+      el.addEventListener('pointerdown', e => {
+        e.stopPropagation(); e.preventDefault();
+        try { el.setPointerCapture(e.pointerId); } catch {}
+        const cur = p.objs.find(x => x.id === this._shEdit.id);
+        this._shEdit.drag = { kx, ky, before: p.objs, startObj: cur };
+      });
+      el.addEventListener('pointermove', e => {
+        const d = this._shEdit?.drag;
+        if (!d || d.kx !== kx) return;
+        const i = this.pages.indexOf(p);
+        const pt = this._pagePoint(e, i);
+        const cur = p.objs.find(x => x.id === this._shEdit.id);
+        const n = { ...cur, [kx]: pt.x, [ky]: pt.y };
+        p.objs = p.objs.map(x => (x.id === cur.id ? n : x));
+        this._shEdit.id = n.id;
+        this._placeShapeEdit();
+        if (!this._shRaf) this._shRaf = requestAnimationFrame(() => { this._shRaf = 0; this._refreshPage(p); });
+      });
+      const up = () => {
+        const d = this._shEdit?.drag;
+        if (!d || d.kx !== kx) return;
+        this._shEdit.drag = null;
+        const after = p.objs;
+        p.objs = d.before;
+        this._setObjs(p, after, 'ajustar forma');
+        this._refreshPage(p);
+      };
+      el.addEventListener('pointerup', up);
+      el.addEventListener('pointercancel', up);
+      v.el.appendChild(el);
+      return { el, kx, ky };
+    });
+    this._shEdit = { pageId: p.id, id, hs };
+    this._placeShapeEdit();
+  }
+
+  _placeShapeEdit() {
+    const s = this._shEdit;
+    if (!s) return;
+    const p = this.pageById(s.pageId);
+    const o = p?.objs.find(x => x.id === s.id);
+    if (!o) return this._endShapeEdit();
+    for (const h of s.hs) { h.el.style.left = o[h.kx] * this.zoom + 'px'; h.el.style.top = o[h.ky] * this.zoom + 'px'; }
+  }
+
+  _endShapeEdit() {
+    if (!this._shEdit) return;
+    for (const h of this._shEdit.hs) h.el.remove();
+    this._shEdit = null;
   }
 
   // ---------------- modo あ ----------------

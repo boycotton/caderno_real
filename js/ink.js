@@ -6,13 +6,14 @@ let _id = 0;
 export const newId = () => Date.now().toString(36) + (_id++).toString(36) + Math.random().toString(36).slice(2, 6);
 
 export const TOOL_STYLE = {
-  pen:    { thinning: 0.55, smoothing: 0.55, streamline: 0.4, opacity: 1 },
-  pencil: { thinning: 0.25, smoothing: 0.65, streamline: 0.35, opacity: 0.78 },
+  pen:    { thinning: 0.55, smoothing: 0.5, streamline: 0.2, opacity: 1 },
+  pencil: { thinning: 0.25, smoothing: 0.55, streamline: 0.2, opacity: 0.78 },
   marker: { thinning: 0,    smoothing: 0.6,  streamline: 0.55, opacity: 0.35 },
 };
 
 export const FONT_STACK = 'Helvetica, Arial, "Liberation Sans", sans-serif';
 
+import { curvePoints } from './recognize.js';
 const cache = new WeakMap(); // objeto -> { path, poly, bbox }
 
 function strokeOutline(o) {
@@ -50,6 +51,7 @@ export function shapeOutline(o) {
     case 'triangle': return { closed: true, pts: [[(l + r) / 2, t], [r, b], [l, b]] };
     case 'rtriangle': return { closed: true, pts: [[l, t], [r, b], [l, b]] };
     case 'poly': return { closed: true, pts: o.pts };
+    case 'curve': return { closed: false, pts: curvePoints(o) };
     default: return { closed: false, pts: [[x1, y1], [x2, y2]] };
   }
 }
@@ -218,7 +220,7 @@ export function transformObj(o, dx, dy, s = 1, ox = 0, oy = 0, keepId = true) {
   const Y = y => oy + (y - oy) * s + dy;
   const n = { ...o, id: keepId ? o.id : newId() };
   if (o.t === 'stroke') { n.pts = o.pts.map(p => [X(p[0]), Y(p[1]), p[2]]); n.size = o.size * s; }
-  else if (o.t === 'shape') { n.x1 = X(o.x1); n.y1 = Y(o.y1); n.x2 = X(o.x2); n.y2 = Y(o.y2); n.size = Math.max(0.3, o.size * s); if (o.pts) n.pts = o.pts.map(p => [X(p[0]), Y(p[1])]); }
+  else if (o.t === 'shape') { n.x1 = X(o.x1); n.y1 = Y(o.y1); n.x2 = X(o.x2); n.y2 = Y(o.y2); n.size = Math.max(0.3, o.size * s); if (o.pts) n.pts = o.pts.map(p => [X(p[0]), Y(p[1])]); if (o.cx != null) { n.cx = X(o.cx); n.cy = Y(o.cy); } }
   else if (o.t === 'text') { n.x = X(o.x); n.y = Y(o.y); n.size = o.size * s; }
   return n;
 }

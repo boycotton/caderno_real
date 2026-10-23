@@ -22,6 +22,7 @@ const SHAPES = [['line', 'Linha'], ['arrow', 'Seta'], ['rect', 'Retângulo'], ['
 
 let ed;           // Editor
 let learn;        // modo あ
+let learnBusy = null;
 let cur = null;   // documento aberto
 let saving = false;
 let autosaveTimer;
@@ -41,11 +42,12 @@ function init() {
     onClip: () => renderToolbar(),
     onToast: m => toast(m, { ms: 4200 }),
     onPenOnly: () => renderToolbar(),
-    onLearn: (i, pt, e, mode) => {
-      if (!learn) return;
-      if (i < 0 || !pt || !cur) return learn.hide();
-      const a = ed.toStage(i, pt.x, pt.y);
-      learn.at(cur, i, ed.pages[i], pt, { x: a.x, y: a.y - 14, h: 28 }, { sticky: mode === 'drag' });
+    onLearn: async (i, pt, e, mode) => {
+      if (!learn || !cur) return;
+      if (mode === 'tap') { if (i < 0 || !pt) return learn.hide(); learnBusy = learn.begin(cur, i, ed.pages[i], pt); return; }
+      if (mode === 'drag') { await learnBusy; if (pt) learn.move(pt); return; }
+      if (mode === 'up') { await learnBusy; return learn.end(); }
+      learn.hide();
     },
   });
   learn = new Learn(ed, $('#stage'));
@@ -362,6 +364,7 @@ function enterEditor() {
   $('#home').hidden = true;
   $('#editor').hidden = false;
   $('#doc-title').textContent = cur.name;
+  if ($('#docs-lbl')) $('#docs-lbl').textContent = cur.name;
   ed.setDoc(cur);
   if (!ed.tool) ed.setTool('pen');
   renderToolbar();
@@ -481,7 +484,8 @@ function buildEditorChrome() {
       </div>
       <div class="optbar" id="optbar"></div>
       <div class="tb-group tb-right">
-        <button class="icon-btn learn-btn" id="b-learn" title="Modo aprender língua: toque ou paire a caneta numa palavra japonesa do PDF">あ</button>
+        <button class="docs-btn" id="b-docs" title="Documentos abertos">${icon('file', 'sm')}<span id="docs-lbl"></span><span class="dd">▾</span></button>
+        <button class="icon-btn learn-btn" id="b-learn" title="Modo aprender língua: arraste a caneta sobre uma palavra japonesa do PDF">あ</button>
         <button class="icon-btn lock-btn" id="b-lock" title="Travar (tela cheia, não sai do app sem querer)">${icon('unlock')}</button>
         <button class="icon-btn" id="b-spen" title="Só a S Pen desenha">${icon('spen')}</button>
         <button class="icon-btn" id="b-pages" title="Páginas">${icon('pages')}</button>
@@ -530,6 +534,7 @@ function buildEditorChrome() {
   };
   $('#b-pages').onclick = togglePagePanel;
   $('#b-lock').onclick = toggleLock;
+  $('#b-docs').onclick = ev => docsMenu(ev.currentTarget);
   $('#b-learn').onclick = () => { ed.setLearn(!ed.learn); if (!ed.learn) learn.hide(); renderToolbar(); };
   $('#b-save').onclick = () => saveDoc();
   $('#b-more').onclick = ev => moreMenu(ev.currentTarget);
@@ -568,7 +573,7 @@ function renderOptbar() {
   ob.innerHTML = '';
   $('#b-learn')?.classList.toggle('on', !!ed.learn);
   if (ed.learn) {
-    ob.innerHTML = `<span class="hint"><b class="jp-glyph">あ</b> Toque ou paire a caneta numa palavra do PDF</span>`;
+    ob.innerHTML = `<span class="hint"><b class="jp-glyph">あ</b> Arraste a caneta sobre a palavra do PDF (toque = 1 caractere)</span>`;
     return;
   }
   if (t === 'paste') {
@@ -790,9 +795,41 @@ async function renameDoc() {
   const n = await promptBox('Nome do documento', cur.name, { ok: 'Renomear' });
   if (!n) return;
   cur.name = n;
-  $('#doc-title').textContent = n;
+  $('#doc-title').textContent = n; if ($('#docs-lbl')) $('#docs-lbl').textContent = n;
   if (cur.source.t === 'drive') cur.renamePending = true;
   cur.dirty = true; updateSaveState(); scheduleAutosave();
+}
+
+// Lista de documentos abertos/recentes na barra: troca rápida e × para fechar.
+async function docsMenu(anchor) {
+  if (cur) await saveLocal();
+  const docs = await store.listDocs().catch(() => []);
+  popover(anchor, (pop, close) => {
+    pop.classList.add('docs-pop');
+    pop.appendChild(h(`<div class="docs-head">Documentos (${docs.length})</div>`));
+    if (!docs.length) pop.appendChild(h('<p class="pad muted">Nenhum.</p>'));
+    for (const d of docs) {
+      const on = cur && d.id === cur.id;
+      const src = d.source?.t === 'drive' ? icon('drive', 'sm') : d.source?.t === 'local' ? icon('folder', 'sm') : icon('file', 'sm');
+      const row = h(`<div class="docs-row ${on ? 'on' : ''}"><button class="docs-open">${src}<span class="docs-name">${esc(d.name)}</span>${d.dirty ? '<span class="docs-dirty" title="Não enviado ao Drive">●</span>' : ''}</button><button class="docs-x" title="Fechar">×</button></div>`);
+      $('.docs-open', row).onclick = async () => { close(); if (!on) { await saveLocal(); resumeDoc(d.id); } };
+      $('.docs-x', row).onclick = async () => {
+        if (d.dirty && d.source?.t !== 'drive' && !(await confirmBox('Fechar?', `“${d.name}” não foi salvo no Drive nem baixado. Fechar apaga o rascunho deste tablet.`, { ok: 'Fechar mesmo assim', danger: true }))) return;
+        if (d.dirty && d.source?.t === 'drive' && !(await confirmBox('Fechar?', `“${d.name}” tem alterações que não foram enviadas ao Drive.`, { ok: 'Fechar sem enviar', danger: true }))) return;
+        await store.deleteDoc(d.id);
+        row.remove();
+        if (on) {
+          cur = null;
+          const rest = docs.filter(x => x.id !== d.id);
+          close();
+          if (rest.length) resumeDoc(rest[0].id); else showHome();
+        }
+        docs.splice(docs.indexOf(d), 1);
+        $('.docs-head', pop).textContent = `Documentos (${docs.length})`;
+      };
+      pop.appendChild(row);
+    }
+  }, { align: 'right' });
 }
 
 async function leaveEditor() {
@@ -937,6 +974,7 @@ async function saveToDriveAs(folder = null) {
     setPref('lastFolder', folder.id);
     cur.name = name.replace(/\.pdf$/i, '');
     $('#doc-title').textContent = cur.name;
+  if ($('#docs-lbl')) $('#docs-lbl').textContent = cur.name;
     cur.source = { t: 'drive', fileId: res.id, parentId: folder.id, modifiedTime: res.modifiedTime };
     cur.renamePending = false;
     await adoptSaved(bytes);

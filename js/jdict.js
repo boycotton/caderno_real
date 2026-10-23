@@ -111,12 +111,12 @@ export function deinflect(word) {
 const kata2hira = s => s.replace(/[ァ-ヶ]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0x60));
 
 // Procura a palavra mais longa no começo de `text` (como o Rikaikun). Devolve { len, entries:[...] }.
-export async function lookup(text, max = 6) {
+export async function lookup(text, max = 6, { exact = false } = {}) {
   text = text.slice(0, 20);
   const results = [];
   const got = new Set();
   let bestLen = 0;
-  for (let len = text.length; len >= 1 && results.length < max; len--) {
+  for (let len = text.length; len >= (exact ? text.length : 1) && results.length < max; len--) {
     const sub = text.slice(0, len);
     if (!/[぀-ヿ㐀-鿿豈-﫿々〆ヶ]/.test(sub[0])) break;
     const cands = deinflect(sub);

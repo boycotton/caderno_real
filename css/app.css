@@ -539,3 +539,41 @@ img, svg { -webkit-user-drag: none; }
 .jp-kc { font-size: 42px; line-height: 1; width: 52px; height: 52px; display: grid; place-items: center; background: #fff; box-shadow: var(--field); flex: none; }
 .jp-kd { font-size: 13px; }
 .jp-meta { color: #555; font-size: 12px; }
+
+/* alças de ajuste de forma (reta, seta, curva) */
+.sh-handle { position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%; background: #fff; border: 3px solid #000080; box-shadow: 1px 1px 0 #000; z-index: 6; touch-action: none; cursor: grab; }
+.sh-handle.mid { border-color: #c05000; background: #ffe0b0; }
+.sh-handle::after { content: ""; position: absolute; inset: -12px; }
+.jp-none { color: #555; padding: 4px 0; }
+
+/* lista de documentos na barra */
+.docs-btn { height: 38px; max-width: 200px; display: inline-flex; align-items: center; gap: 5px; padding: 0 6px; margin-right: 4px; font-size: 13px; background: #fff; box-shadow: var(--field); border: 0; }
+.docs-btn #docs-lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.docs-btn .dd { margin-left: 2px; font-size: 11px; background: var(--face); box-shadow: var(--raised); width: 16px; height: 30px; display: grid; place-items: center; flex: none; }
+@media (max-width: 1000px) { .docs-btn { max-width: 120px; } }
+@media (max-width: 800px) { .docs-btn #docs-lbl { display: none; } }
+.docs-pop { min-width: 300px; max-width: 420px; max-height: 60vh; overflow-y: auto; padding: 0 !important; }
+.docs-head { background: var(--title); color: #fff; font-weight: 700; padding: 4px 8px; font-size: 13px; position: sticky; top: 0; }
+.docs-row { display: flex; align-items: stretch; border-bottom: 1px dotted #a0a0a0; }
+.docs-row.on { background: var(--navy); color: #fff; }
+.docs-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 10px 8px; background: none; border: 0; text-align: left; color: inherit; font-size: 14px; }
+.docs-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.docs-dirty { color: #c00000; flex: none; }
+.docs-row.on .docs-dirty { color: #ff8080; }
+.docs-x { width: 44px; flex: none; background: none; border: 0; border-left: 1px dotted #a0a0a0; font-size: 22px; font-weight: 700; color: inherit; }
+.docs-x:active { background: #c00000; color: #fff; }
+/* barra: as espessuras não podem sumir — botão Salvar só com ícone e lista de documentos mais estreita */
+#save-lbl { display: none; }
+.save-btn { padding: 0 8px; min-width: 40px; }
+.docs-btn { max-width: 150px; }
+.topbar .icon-btn, .topbar .tool { width: 35px; height: 38px; }
+.optbar { gap: 4px; }
+.optbar .swatch { width: 22px; height: 22px; }
+.optbar .swatches { gap: 2px; }
+.optbar .size { width: 30px; height: 32px; }
+.docs-btn { max-width: 130px; }
+@media (max-width: 800px) {
+  .topbar .icon-btn, .topbar .tool { width: 32px; }
+  .tb-group { padding: 0 2px; }
+  .docs-btn { padding: 0 3px; margin-right: 2px; }
+}

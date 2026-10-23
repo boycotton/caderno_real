@@ -89,7 +89,7 @@ Na primeira vez o Google mostra "O Google não verificou este app" → **Continu
 | Lápis | Traço mais fino, tom grafite levemente transparente |
 | Marca-texto | Largo e translúcido |
 | Borracha | Apaga o traço inteiro que tocar. **Segurar o botão da S Pen = borracha temporária** |
-| Reconhecer forma | Com caneta ou lápis: desenhe e **segure a caneta parada** no fim (~0,6 s). Vira reta, seta, círculo, elipse, retângulo, triângulo ou polígono. Reta/seta continuam seguindo a caneta até soltar |
+| Reconhecer forma | Com caneta ou lápis: desenhe e **segure a caneta parada** no fim (~0,7 s). Vira reta, seta, curva, círculo, elipse, retângulo, triângulo ou polígono. Reta, seta e curva ganham **bolinhas para ajustar** (curva: início, meio e fim); tocar fora confirma |
 | Formas | Linha, seta, retângulo, elipse, triângulo e triângulo retângulo. Linhas se alinham a cada 15°; retângulo/elipse quase quadrados viram quadrado/círculo perfeitos. "Preencher" deixa a forma com fundo translúcido |
 | Texto | Toque na página e digite (o teclado Samsung também aceita escrita à mão). Toque num texto existente para editar |
 | Laço | Circule itens (ou toque em um) para selecionar |
@@ -98,8 +98,9 @@ Tocar de novo no botão de Formas abre a lista de formas.
 
 ### Modo あ (aprender japonês)
 - Botão **あ** na barra: liga/desliga.
-- Com ele ligado, **paire a S Pen** sobre uma palavra japonesa do PDF (ou toque nela) e aparece a definição,
-  como no Rikaikun: palavra, leitura, significados (inglês, do JMdict), a forma do verbo/adjetivo
+- Com ele ligado, **encoste a caneta no primeiro caractere e arraste até o último** da palavra (você escolhe o
+  trecho; o app não tenta adivinhar). Ao soltar aparece a definição exatamente desse trecho. Um toque = um caractere.
+  Mostra: palavra, leitura, significados (inglês, do JMdict), a forma do verbo/adjetivo
   (ex.: 食べなかった → 食べる, passado negativo) e os kanji com significado (em português quando houver),
   leituras on/kun, traços e nível JLPT.
 - Funciona com o texto que já existe no PDF (sem OCR): PDFs escaneados não têm texto.
@@ -126,6 +127,9 @@ Atalhos com teclado físico: Ctrl+Z / Ctrl+Y, Ctrl+C / Ctrl+X / Ctrl+V, Ctrl+D (
   o dedo apenas rola (um dedo) e dá zoom (pinça). A palma apoiada é ignorada enquanto a caneta está na tela.
 - O botão com ícone de caneta (à direita, no alto) liga/desliga esse modo. Desligado: um dedo desenha e dois dedos rolam/dão zoom.
 - Pairar a S Pen mostra a área da borracha e a prévia do que vai ser colado.
+
+### Documentos abertos
+O campo com o nome do documento na barra (▾) lista os documentos abertos/recentes: toque para trocar, **×** para fechar.
 
 ### Páginas
 - **+** (canto inferior esquerdo) adiciona uma página depois da atual, com o modelo que você escolher —

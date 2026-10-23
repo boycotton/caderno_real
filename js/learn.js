@@ -97,31 +97,60 @@ export class Learn {
     return { chars, text: chars.map(c => c.ch).join('') };
   }
 
-  async at(doc, pageIndex, p, pt, anchor, { sticky = false } = {}) {
+  // Você marca a palavra: encosta no 1º caractere e arrasta até o último. Ao soltar, procura exatamente esse trecho.
+  async begin(doc, pageIndex, p, pt) {
     const seq = ++this.seq;
+    this.pop.hidden = true;
+    this.sel = null;
     const t = await this.textAt(doc, p, pt);
     if (seq !== this.seq) return;
     if (!t) {
       if (!this.warned) { this.warned = true; this.ed.hooks.onToast?.('Esta página não tem texto do PDF (é imagem ou anotação).'); }
       return this.hide();
     }
-    if (t.none || !t.text) { if (!sticky) this.hide(); return; }
-    const key = pageIndex + ':' + t.text;
-    if (key === this.lastKey && !this.pop.hidden) return;
-    let r;
-    try { r = await lookup(t.text); } catch (e) { this.ed.hooks.onToast?.('Não foi possível carregar o dicionário (' + e.message + ').'); return; }
-    if (seq !== this.seq) return;
-    if (!r.len) { if (!sticky) this.hide(); return; }
-    this.lastKey = key;
-    this.ed.drawHighlight(pageIndex, t.chars.slice(0, r.len).map(c => c.r));
-    const kj = [...new Set([...t.text.slice(0, r.len)].filter(isKanji))].slice(0, 4);
-    const infos = (await Promise.all(kj.map(kanjiInfo))).filter(Boolean);
-    if (seq !== this.seq) return;
-    this.render(r, infos);
-    this.place(anchor);
+    if (t.none || !t.chars.length) return this.hide();
+    this.sel = { doc, pageIndex, p, anchor: t, n: 1, chars: t.chars.slice(0, 1) };
+    this.ed.drawHighlight(pageIndex, this.sel.chars.map(c => c.r));
   }
 
-  render(r, infos) {
+  async move(pt) {
+    const S = this.sel;
+    if (!S) return;
+    const inside = (r, q, pad) => q.x >= r.x - pad && q.x <= r.x + r.w + pad && q.y >= r.y - pad && q.y <= r.y + r.h + pad;
+    // para frente: até qual caractere (a partir do 1º) a caneta chegou
+    let k = -1;
+    S.anchor.chars.forEach((c, i) => { if (inside(c.r, pt, c.r.h * 0.15)) k = i; });
+    if (k >= 0) S.chars = S.anchor.chars.slice(0, k + 1);
+    else {
+      // para trás: começa onde a caneta está e vai até o 1º caractere marcado
+      const t = await this.textAt(S.doc, S.p, pt);
+      if (this.sel !== S || !t?.chars?.length) return;
+      const a0 = S.anchor.chars[0].r;
+      const j = t.chars.findIndex(c => Math.abs(c.r.x - a0.x) < 0.5 && Math.abs(c.r.y - a0.y) < 0.5);
+      if (j < 0) return;
+      S.chars = t.chars.slice(0, j + 1);
+    }
+    this.ed.drawHighlight(S.pageIndex, S.chars.map(c => c.r));
+  }
+
+  async end(anchor) {
+    const S = this.sel;
+    if (!S || !S.chars.length) return;
+    const seq = ++this.seq;
+    const text = S.chars.map(c => c.ch).join('').replace(/\s+/g, '');
+    let r;
+    try { r = await lookup(text, 6, { exact: true }); } catch (e) { this.ed.hooks.onToast?.('Não foi possível carregar o dicionário (' + e.message + ').'); return; }
+    const kj = [...new Set([...text].filter(isKanji))].slice(0, 4);
+    const infos = (await Promise.all(kj.map(kanjiInfo))).filter(Boolean);
+    if (seq !== this.seq) return;
+    if (!r.entries.length && !infos.length) { this.pop.innerHTML = `<div class="jp-none">Nada no dicionário para «${esc(text)}».</div>`; this.pop.hidden = false; }
+    else this.render(r, infos, text);
+    const last = S.chars[S.chars.length - 1].r, first = S.chars[0].r;
+    const a = this.ed.toStage(S.pageIndex, first.x, first.y), b = this.ed.toStage(S.pageIndex, last.x + last.w, last.y + last.h);
+    this.place({ x: (a.x + b.x) / 2, y: Math.min(a.y, b.y), h: Math.abs(b.y - a.y) });
+  }
+
+  render(r, infos, text = '') {
     const words = r.entries.map(e => {
       const head = e.kanji.length ? `<span class="jp-w">${esc(e.kanji.slice(0, 2).join('、'))}</span><span class="jp-r">【${esc(e.kana.slice(0, 2).join('、'))}】</span>` : `<span class="jp-w">${esc(e.kana.slice(0, 2).join('、'))}</span>`;
       const why = e.why.length ? `<span class="jp-why">« ${esc(e.why.slice().reverse().join(' « '))}</span>` : '';
@@ -133,7 +162,7 @@ export class Learn {
       ${k.on.length ? `<div>on: ${esc(k.on.slice(0, 4).join('、'))}</div>` : ''}
       ${k.kun.length ? `<div>kun: ${esc(k.kun.slice(0, 4).join('、'))}</div>` : ''}
       <div class="jp-meta">${k.strokes} traços${k.jlpt ? ` · JLPT N${k.jlpt === 4 ? '4/5' : k.jlpt}` : ''}${k.grade ? ` · ${k.grade <= 6 ? k.grade + 'º ano' : 'jōyō'}` : ''}</div></div></div>`).join('');
-    this.pop.innerHTML = words + (kanji ? `<div class="jp-ks">${kanji}</div>` : '');
+    this.pop.innerHTML = (words || `<div class="jp-none">Nenhuma palavra «${esc(text)}» no dicionário.</div>`) + (kanji ? `<div class="jp-ks">${kanji}</div>` : '');
     this.pop.hidden = false;
   }
 
@@ -150,6 +179,7 @@ export class Learn {
 
   hide() {
     this.seq++;
+    this.sel = null;
     this.lastKey = '';
     this.pop.hidden = true;
     this.ed.drawHighlight(-1, []);

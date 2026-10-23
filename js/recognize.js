@@ -88,7 +88,8 @@ export function recognize(raw) {
       const nearTip = tail.every(p => dist(p, tip) < far * 0.45);
       if (sdev < far * 0.08 && tailLen > far * 0.08 && tailLen < far * 1.2 && nearTip) return { kind: 'arrow', x1: a[0], y1: a[1], x2: tip[0], y2: tip[1] };
     }
-    return null;
+    // curva suave: Bézier que passa pelo início, pelo meio do traço e pelo fim
+    return fitCurve(P, L, D);
   }
 
   // fechado: polígono simplificado
@@ -127,4 +128,33 @@ export function recognize(raw) {
 function polyShape(V) {
   const b = bbox(V);
   return { kind: 'poly', pts: V.map(([x, y]) => [Math.round(x * 100) / 100, Math.round(y * 100) / 100]), x1: b.x0, y1: b.y0, x2: b.x1, y2: b.y1 };
+}
+
+export function curveCtrl(o) { return [2 * o.cx - (o.x1 + o.x2) / 2, 2 * o.cy - (o.y1 + o.y2) / 2]; }
+
+export function curvePoints(o, n = 32) {
+  const [qx, qy] = curveCtrl(o), out = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n, u = 1 - t;
+    out.push([u * u * o.x1 + 2 * u * t * qx + t * t * o.x2, u * u * o.y1 + 2 * u * t * qy + t * t * o.y2]);
+  }
+  return out;
+}
+
+function fitCurve(P, L, D) {
+  if (D < 20 || P.length < 6) return null;
+  // ponto do meio pelo comprimento do traço
+  let acc = 0, M = P[0];
+  for (let i = 1; i < P.length; i++) { acc += dist(P[i - 1], P[i]); if (acc >= L / 2) { M = P[i]; break; } }
+  const o = { x1: P[0][0], y1: P[0][1], x2: P[P.length - 1][0], y2: P[P.length - 1][1], cx: M[0], cy: M[1] };
+  const S = curvePoints(o, 48);
+  let maxE = 0, sumE = 0;
+  for (const p of P) {
+    let m = Infinity;
+    for (let i = 1; i < S.length; i++) m = Math.min(m, distSeg(p, S[i - 1], S[i]));
+    maxE = Math.max(maxE, m); sumE += m;
+  }
+  const ref = Math.max(D, dist(P[0], M) + dist(M, P[P.length - 1]));
+  if (maxE > ref * 0.09 || sumE / P.length > ref * 0.035) return null;
+  return { kind: 'curve', ...o };
 }
