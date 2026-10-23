@@ -519,7 +519,11 @@ export class Editor {
   _bind() {
     const v = this.viewer;
     v.addEventListener('pointerdown', e => this._down(e));
-    v.addEventListener('pointermove', e => this._move(e));
+    // Durante o traço, usa pointerrawupdate (chega antes do pointermove, sem esperar o quadro) quando existe
+    this._raw = 'onpointerrawupdate' in window;
+    const drawingStroke = e => { const g = this.gesture; return g?.kind === 'draw' && g.obj?.t === 'stroke' && !g.snapped && g.pointerId === e.pointerId; };
+    if (this._raw) v.addEventListener('pointerrawupdate', e => { if (drawingStroke(e)) this._move(e); });
+    v.addEventListener('pointermove', e => { if (this._raw && drawingStroke(e)) return; this._move(e); });
     v.addEventListener('pointerup', e => this._up(e));
     v.addEventListener('pointercancel', e => this._up(e, true));
     v.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch' && !this.ptrs.has(e.pointerId)) this._clearOverlay(); });
@@ -864,7 +868,7 @@ export class Editor {
         if (Math.hypot(q.x - lastP[0], q.y - lastP[1]) * this.zoom < 0.6) continue;
         // suavização leve e só para frente (o que já foi desenhado não muda); a pressão da S Pen oscila, então é a mais suavizada
         const pr = lastP[2] + (this._pressure(ce) - lastP[2]) * 0.35;
-        g.obj.pts.push([lastP[0] + (q.x - lastP[0]) * 0.75, lastP[1] + (q.y - lastP[1]) * 0.75, pr]);
+        g.obj.pts.push([q.x, q.y, pr]);
       }
       this._drawLive();
     } else if (g.tool === 'eraser') {
@@ -1072,21 +1076,27 @@ export class Editor {
 
   // Traço ao vivo: acrescenta só os segmentos novos (o marca-texto, de largura fixa, é redesenhado inteiro).
   _drawLive() {
-    if (this._liveRaf) return;
-    this._liveRaf = requestAnimationFrame(() => {
-      this._liveRaf = 0;
-      const g = this.gesture;
-      if (!g?.obj || g.obj.t !== 'stroke') return;
-      const n = g.obj.pts.length;
-      if (g.liveN === n) return;
-      const ctx = this._overlayFor(g.pageIndex);
-      if (g.obj.tool === 'marker' || !g.liveN) {
+    // desenha na hora (sem esperar o próximo quadro): só os segmentos novos
+    const g = this.gesture;
+    if (!g?.obj || g.obj.t !== 'stroke') return;
+    const n = g.obj.pts.length;
+    if (g.liveN === n) return;
+    if (g.obj.tool === 'marker') {
+      // largura fixa e translúcido: redesenha inteiro, mas no máximo uma vez por quadro
+      if (this._liveRaf) return;
+      this._liveRaf = requestAnimationFrame(() => {
+        this._liveRaf = 0;
+        if (this.gesture !== g) return;
         this._clearOverlay();
-        this._overlayFor(g.pageIndex);
-        drawStrokeSegs(ctx, g.obj, 0);
-      } else drawStrokeSegs(ctx, g.obj, g.liveN);
-      g.liveN = n;
-    });
+        drawStrokeSegs(this._overlayFor(g.pageIndex), g.obj, 0);
+        g.liveN = g.obj.pts.length;
+      });
+      return;
+    }
+    const ctx = this._overlayFor(g.pageIndex);
+    if (!g.liveN) { this._clearOverlay(); this._overlayFor(g.pageIndex); }
+    drawStrokeSegs(ctx, g.obj, g.liveN || 0);
+    g.liveN = n;
   }
 
   _drawLiveObj(i, o) {

@@ -1013,9 +1013,13 @@ function updateSaveState() {
   b.title = src === 'drive' ? 'Salvar no Google Drive (substitui o arquivo; o Drive guarda versões anteriores)' : 'Salvar no Google Drive ou baixar';
 }
 
+// Guarda no tablet quando você para de escrever (nunca no meio de um traço, para não engasgar a caneta)
 function scheduleAutosave() {
   clearTimeout(autosaveTimer);
-  autosaveTimer = setTimeout(saveLocal, 1200);
+  autosaveTimer = setTimeout(() => {
+    if (ed.gesture) return scheduleAutosave();
+    (window.requestIdleCallback || (f => setTimeout(f, 0)))(() => { if (ed.gesture) scheduleAutosave(); else saveLocal(); }, { timeout: 4000 });
+  }, 2000);
 }
 
 async function saveLocal(doc = cur) {
