@@ -128,6 +128,21 @@ Atalhos com teclado físico: Ctrl+Z / Ctrl+Y, Ctrl+C / Ctrl+X / Ctrl+V, Ctrl+D (
 - No menu **⋮ → Só a S Pen desenha / Dedo também desenha** dá para trocar esse modo. Desligado: um dedo desenha e dois dedos rolam/dão zoom.
 - Pairar a S Pen mostra a área da borracha e a prévia do que vai ser colado.
 
+### Recorte (câmera) e calculadora
+- **Câmera**: arraste um retângulo sobre a página. O recorte vira o item do **Colar** (só o último fica guardado,
+  vale para todos os documentos e continua lá depois de fechar o app). Ao colar, ele já fica selecionado:
+  arraste para mover e puxe o canto azul para redimensionar. Vai junto no PDF salvo.
+- **Calculadora** (ícone de calculadora): científica, no estilo da do Windows 95; arraste pela barra azul.
+
+### Retas com ângulo (botão ✨ ligado)
+- Desenhe a reta e **segure** a caneta parada: ela vira reta e continua seguindo a caneta (esticar/girar)
+  com o **ângulo** ao lado. Encaixa em múltiplos de 15° e fica **paralela (∥) ou perpendicular (⊥)**
+  às retas que já estão na página quando chega perto. O mesmo vale ao arrastar as bolinhas das pontas.
+
+### Pastas em "Neste tablet"
+- **Nova pasta** funciona também em *Neste tablet*. **⋮ → Mover para pasta…** em cada documento;
+  **Nova nota** dentro de uma pasta já cria a nota nela.
+
 ### Documentos abertos (como funciona)
 - O PDF fica no Google Drive. Para mostrar e editar, o tablet precisa de uma cópia — o app baixa **uma vez** e guarda.
 - Voltar para a área de trabalho **não fecha** o documento: ele aparece na **barra de tarefas** (embaixo) e volta
@@ -164,7 +179,7 @@ Salvar várias vezes não faz o arquivo crescer.
   aparecem como "?" no PDF salvo. Para símbolos, escreva à mão ou use um carimbo.
 - Em zoom muito alto (acima de ~2,5×) a página pode ficar um pouco menos nítida — limite de memória para o tablet não travar.
 - PDFs protegidos por senha podem não salvar.
-- O login do Google dura cerca de 1 hora; depois disso, ao salvar, a janelinha do Google aparece rapidamente de novo.
+- O Google libera o acesso por 1 hora de cada vez (app sem servidor). O app renova sozinho num toque da área de trabalho ou da barra, com a sua conta já escolhida (a janelinha abre e fecha sozinha).
 
 ## Estrutura dos arquivos
 ```

@@ -1,5 +1,5 @@
 // Editor de páginas: exibição, zoom, ferramentas e entrada da S Pen.
-import { drawObj, geom, hitObj, inLasso, transformObj, unionBox, simplifyPts, newId, TOOL_STYLE } from './ink.js';
+import { drawObj, geom, hitObj, inLasso, transformObj, unionBox, simplifyPts, newId, TOOL_STYLE, imageHooks } from './ink.js';
 import { drawTemplateCanvas } from './templates.js';
 import { recognize } from './recognize.js';
 import { prefs, setPref } from './store.js';
@@ -50,6 +50,7 @@ export class Editor {
     this.dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.penSeen = 0;
     this._bind();
+    imageHooks.onLoad = () => this.refreshAll();
     // o Android descarta a memória dos canvas quando o app vai para segundo plano: redesenha ao voltar
     document.addEventListener('visibilitychange', () => { if (!document.hidden) { this._resetOverlay(); this.refreshAll(); } });
     this.overlay.addEventListener('contextrestored', () => this._clearOverlay());
@@ -105,6 +106,7 @@ export class Editor {
     const fit = this._fitZoom();
     if (this.fitMode) this.zoom = fit;
     const z = this.zoom;
+    if (this._lastZ !== z) { this._lastZ = z; for (const v of this.views.values()) this._dropDetail(v); }
     const vw = this.viewer.clientWidth || 800;
     const maxW = Math.max(100, ...pages.map(p => p.w));
     const contentW = Math.max(vw, maxW * z + PAD * 2);
@@ -231,11 +233,88 @@ export class Editor {
       if (v.inkZoom !== this.zoom || v.inkDirty) this._renderInk(v);
       if (v.baseZoom !== this.zoom && !v.busy) await this._renderBase(v);
     }
+    this._scheduleDetail();
+  }
+
+  // ---------- camada de detalhe: com zoom alto, a parte visível da página é redesenhada em resolução total ----------
+  _scheduleDetail() {
+    clearTimeout(this._dtT);
+    this._dtT = setTimeout(() => this._renderDetails(), 140);
+  }
+
+  async _renderDetails() {
+    if (!this.doc || this.gesture?.kind === 'nav') return;
+    const top = this.viewer.scrollTop, left = this.viewer.scrollLeft, vw = this.viewer.clientWidth, vh = this.viewer.clientHeight;
+    for (const [i, L] of this.layout.entries()) {
+      const p = this.pages[i], v = this.views.get(p.id);
+      if (!v || v.dead) continue;
+      const vis = L.y + L.h > top && L.y < top + vh && L.x + L.w > left && L.x < left + vw;
+      const need = this._pxRatio(p) < this.dpr * this.zoom * 0.92;
+      if (!vis || !need) { this._dropDetail(v); continue; }
+      const z = this.zoom, s = this.dpr * z;
+      const mx = vw * 0.15, my = vh * 0.15;
+      const x0 = Math.max(0, (left - mx - L.x) / z), y0 = Math.max(0, (top - my - L.y) / z);
+      const x1 = Math.min(p.w, (left + vw + mx - L.x) / z), y1 = Math.min(p.h, (top + vh + my - L.y) / z);
+      if (x1 <= x0 || y1 <= y0) continue;
+      const d = v.dt;
+      if (d && d.z === z && d.x <= x0 + 0.5 && d.y <= y0 + 0.5 && d.x + d.w >= x1 - 0.5 && d.y + d.h >= y1 - 0.5) continue;  // já cobre
+      const seq = (v.dtSeq = (v.dtSeq || 0) + 1);
+      const base = await this.renderRegion(p, { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, s, { ink: false });
+      if (!base || v.dead || v.dtSeq !== seq || this.zoom !== z) continue;
+      let c = v.dt?.c;
+      if (!c) { c = document.createElement('canvas'); c.className = 'detail'; v.el.appendChild(c); }
+      c.width = base.width; c.height = base.height;
+      c.style.left = x0 * z + 'px'; c.style.top = y0 * z + 'px'; c.style.width = (x1 - x0) * z + 'px'; c.style.height = (y1 - y0) * z + 'px';
+      v.dt = { c, base, x: x0, y: y0, w: x1 - x0, h: y1 - y0, s, z };
+      this._composeDetail(v);
+    }
+  }
+
+  _composeDetail(v) {
+    const d = v.dt;
+    if (!d) return;
+    const ctx = d.c.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(d.base, 0, 0);
+    ctx.setTransform(d.s, 0, 0, d.s, -d.x * d.s, -d.y * d.s);
+    const hide = this.sel?.moving && this.sel.pageId === v.page.id ? this.sel.ids : null;
+    for (const o of v.page.objs) if (!hide || !hide.has(o.id)) drawObj(ctx, o);
+  }
+
+  _dropDetail(v) {
+    if (!v.dt) return;
+    v.dt.c.width = 0; v.dt.c.remove(); v.dt.base.width = 0; v.dt = null;
+  }
+
+  // Desenha um pedaço da página (fundo + anotações) num canvas, em `scale` pixels por ponto.
+  async renderRegion(p, r, scale, { ink = true } = {}) {
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(r.w * scale)); c.height = Math.max(1, Math.round(r.h * scale));
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    try {
+      if (p.src.t === 'tpl' || !this.doc?.pdf) {
+        ctx.setTransform(scale, 0, 0, scale, -r.x * scale, -r.y * scale);
+        if (p.tpl) drawTemplateCanvas(ctx, p.tpl, p.w, p.h);
+      } else {
+        const pg = await this.doc.pdf.getPage(p.src.i + 1);
+        const vp = pg.getViewport({ scale });
+        const params = { canvasContext: ctx, viewport: vp, transform: [1, 0, 0, 1, -r.x * scale, -r.y * scale] };
+        if (this.doc.ocConfig) params.optionalContentConfigPromise = Promise.resolve(this.doc.ocConfig);
+        await pg.render(params).promise;
+      }
+    } catch (e) { if (e?.name !== 'RenderingCancelledException') console.warn('falha ao desenhar trecho', e); return null; }
+    if (ink) {
+      ctx.setTransform(scale, 0, 0, scale, -r.x * scale, -r.y * scale);
+      for (const o of p.objs) drawObj(ctx, o);
+    }
+    return c;
   }
 
   _dropView(v, hard = false) {
     if (v.task) { try { v.task.cancel(); } catch {} v.task = null; }
     for (const k of ['base', 'ink']) if (v[k]) { v[k].width = 0; v[k].height = 0; v[k].remove(); v[k] = null; }
+    this._dropDetail(v);
     v.baseZoom = 0; v.inkZoom = 0; v.inkDirty = true; v.busy = false;
     if (hard) v.dead = true;
   }
@@ -297,6 +376,7 @@ export class Editor {
     for (const o of p.objs) if (!hide || !hide.has(o.id)) drawObj(ctx, o);
     v.inkZoom = this.zoom;
     v.inkDirty = false;
+    if (v.dt) { if (v.dt.z === this.zoom) this._composeDetail(v); else this._dropDetail(v); }
   }
 
   // se o Android tirar a memória de um canvas, ele volta vazio: manda redesenhar
@@ -316,6 +396,7 @@ export class Editor {
     const ctx = v.ink.getContext('2d');
     ctx.setTransform(v.ink.width / p.w, 0, 0, v.ink.height / p.h, 0, 0);
     drawObj(ctx, o);
+    if (v.dt) { const d = v.dt, dc = d.c.getContext('2d'); dc.setTransform(d.s, 0, 0, d.s, -d.x * d.s, -d.y * d.s); drawObj(dc, o); }
   }
 
   _refreshPage(p) {
@@ -515,6 +596,7 @@ export class Editor {
     this._stopMomentum();
     const info = { id: e.pointerId, type: e.pointerType, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now() };
 
+    if (this.snipping && e.pointerType === 'touch' && !this.ptrs.size) { this.ptrs.set(e.pointerId, info); this._startDraw(e); return; }
     if (e.pointerType === 'touch') {
       this.ptrs.set(e.pointerId, info);
       const touches = [...this.ptrs.values()].filter(p => p.type === 'touch');
@@ -715,6 +797,10 @@ export class Editor {
       if (tool !== 'paste') this.clearSelection();
     }
     if (this.textEd) { this._closeText(); if (tool === 'text') { this.gesture = { kind: 'draw', tool: 'noop', pointerId: e.pointerId, ptrType: e.pointerType }; return; } }
+    if (this.snipping) {
+      this.gesture = { kind: 'draw', tool: 'snip', pointerId: e.pointerId, ptrType: e.pointerType, pageIndex: i, sx: e.clientX, sy: e.clientY, ex: e.clientX, ey: e.clientY };
+      return;
+    }
     if (tool === 'learn') {
       this.gesture = { kind: 'draw', tool: 'learn', pointerId: e.pointerId, ptrType: e.pointerType };
       if (i >= 0) this.hooks.onLearn?.(i, this._pagePoint(e, i), e, 'tap');
@@ -752,6 +838,7 @@ export class Editor {
   _drawMove(e) {
     const g = this.gesture;
     if (g.tool === 'noop') return;
+    if (g.tool === 'snip') { g.ex = e.clientX; g.ey = e.clientY; this._drawSnipRect(g); return; }
     if (g.tool === 'learn') { const i = this._pageAtEvent(e); if (i >= 0) this.hooks.onLearn?.(i, this._pagePoint(e, i), e, 'drag'); return; }
     if (g.tool === 'move' || g.tool === 'scale') return this._moveSel(e);
     const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
@@ -761,8 +848,14 @@ export class Editor {
 
     if (g.snapped) {
       // forma reconhecida: reta/seta seguem a caneta; as outras ficam como foram reconhecidas
-      if (g.obj.kind === 'line' || g.obj.kind === 'arrow') { g.obj = { ...g.obj, x2: pt.x, y2: pt.y }; this._drawLiveObj(g.pageIndex, g.obj); }
+      if (g.obj.kind === 'line' || g.obj.kind === 'arrow') {
+        const sn = this._lineSnap(g.page, g.obj.x1, g.obj.y1, pt.x, pt.y);
+        g.obj = { ...g.obj, x2: sn.x, y2: sn.y };
+        this._drawLiveObj(g.pageIndex, g.obj);
+        this._drawAngle(g.pageIndex, sn);
+      }
     } else if (g.obj?.t === 'stroke') {
+      if (this.shapeAssist) this._holdCheck(g, e);
       for (const ce of list) {
         const q = this._pagePoint(ce, g.pageIndex);
         const lastP = g.obj.pts[g.obj.pts.length - 1];
@@ -791,6 +884,7 @@ export class Editor {
     if (e.pointerType === 'pen') this.activePen = null;
     if (!g) return;
     if (g.tool === 'learn') { this.hooks.onLearn?.(0, null, e, 'up'); return; }
+    if (g.tool === 'snip') { this._finishSnip(g, cancel); return; }
     if (g.tool === 'move' || g.tool === 'scale') return this._endMove(g);
     clearTimeout(g.holdT);
     const p = g.page;
@@ -806,6 +900,7 @@ export class Editor {
     // botão "prever formas" ligado: ao soltar, o traço vira reta/seta/curva/círculo/… se for reconhecido
     if (g.obj?.t === 'stroke' && this.shapeAssist && !cancel && g.tool !== 'marker') {
       const r = recognize(g.obj.pts);
+      if (r && (r.kind === 'line' || r.kind === 'arrow')) { const sn = this._lineSnap(p, r.x1, r.y1, r.x2, r.y2); r.x2 = sn.x; r.y2 = sn.y; }
       if (r) {
         const n = { t: 'shape', color: g.obj.color, size: Math.max(0.8, g.obj.size * (g.tool === 'pencil' ? 0.9 : 0.75)), fill: null, ...r, id: newId() };
         this._clearOverlay();
@@ -850,6 +945,73 @@ export class Editor {
     } else if (g.tool === 'paste') {
       if (!g.moved && !cancel) this._pasteAt(p, g.start);
     }
+  }
+
+  // ✨ ligado: segurar a caneta parada (~0,5 s) transforma o traço na hora; reta/seta continuam
+  // seguindo a caneta (esticar/girar) com o ângulo na tela até soltar.
+  _holdCheck(g, e) {
+    if (g.tool === 'marker') return;
+    const x = e.clientX, y = e.clientY;
+    if (g.hold && Math.hypot(x - g.hold.x, y - g.hold.y) < 5) return;
+    g.hold = { x, y };
+    clearTimeout(g.holdT);
+    g.holdT = setTimeout(() => this._snapShape(g), 500);
+  }
+
+  _snapShape(g) {
+    if (this.gesture !== g || g.snapped || g.obj?.t !== 'stroke') return;
+    const r = recognize(g.obj.pts);
+    if (!r) return;
+    g.snapped = true;
+    g.obj = { t: 'shape', color: g.obj.color, size: Math.max(0.8, g.obj.size * (g.tool === 'pencil' ? 0.9 : 0.75)), fill: null, ...r };
+    this._drawLiveObj(g.pageIndex, g.obj);
+    if (r.kind === 'line' || r.kind === 'arrow') this._drawAngle(g.pageIndex, this._lineSnap(g.page, r.x1, r.y1, r.x2, r.y2));
+    try { navigator.vibrate?.(10); } catch {}
+  }
+
+  // Encaixa a ponta (x2,y2) da reta: paralela ou perpendicular às retas da página, ou múltiplos de 15°.
+  _lineSnap(p, x1, y1, x2, y2, skipId) {
+    const len = Math.hypot(x2 - x1, y2 - y1);
+    const ang = Math.atan2(y2 - y1, x2 - x1);
+    const TOL = 2.5 * Math.PI / 180;
+    const diff = (a, b) => { let d = (a - b) % Math.PI; if (d > Math.PI / 2) d -= Math.PI; if (d < -Math.PI / 2) d += Math.PI; return d; };
+    let best = null;
+    for (const o of p?.objs || []) {
+      if (o.t !== 'shape' || !(o.kind === 'line' || o.kind === 'arrow') || o.id === skipId) continue;
+      if (Math.hypot(o.x2 - o.x1, o.y2 - o.y1) < 8) continue;
+      const a = Math.atan2(o.y2 - o.y1, o.x2 - o.x1);
+      for (const [ref, tag] of [[a, '∥'], [a + Math.PI / 2, '⊥']]) {
+        const d = diff(ang, ref);
+        if (Math.abs(d) < TOL && (!best || Math.abs(d) < Math.abs(best.d))) best = { d, tag };
+      }
+    }
+    if (!best) {
+      const step = Math.PI / 12, d = diff(ang, Math.round(ang / step) * step);
+      if (Math.abs(d) < TOL) best = { d, tag: '' };
+    }
+    const fa = best ? ang - best.d : ang;
+    const nx = x1 + Math.cos(fa) * len, ny = y1 + Math.sin(fa) * len;
+    let deg = Math.round((-fa * 180 / Math.PI) * 10) / 10;
+    deg = ((deg % 180) + 180) % 180;
+    return { x: nx, y: ny, deg, tag: best?.tag || '', snapped: !!best };
+  }
+
+  // Ângulo ao lado da ponta da reta (desenhado na camada de cima)
+  _drawAngle(i, sn) {
+    const ctx = this.octx, L = this.layout[i];
+    if (!L) return;
+    const sx = (L.x + sn.x * this.zoom - this.viewer.scrollLeft) * this.dpr, sy = (L.y + sn.y * this.zoom - this.viewer.scrollTop) * this.dpr;
+    const txt = `${String(sn.deg % 1 ? sn.deg.toFixed(1) : sn.deg).replace('.', ',')}°${sn.tag ? ' ' + sn.tag : ''}`;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.font = `bold ${13 * this.dpr}px "Pixelify Sans", sans-serif`;
+    const w = ctx.measureText(txt).width + 10 * this.dpr, hgt = 20 * this.dpr;
+    const bx = sx + 14 * this.dpr, by = sy - 30 * this.dpr;
+    ctx.fillStyle = sn.snapped ? '#000080' : '#ffffe1'; ctx.strokeStyle = '#000'; ctx.lineWidth = this.dpr;
+    ctx.fillRect(bx, by, w, hgt); ctx.strokeRect(bx, by, w, hgt);
+    ctx.fillStyle = sn.snapped ? '#fff' : '#000'; ctx.textBaseline = 'middle';
+    ctx.fillText(txt, bx + 5 * this.dpr, by + hgt / 2);
+    ctx.restore();
   }
 
   _cancelDraw() {
@@ -994,10 +1156,18 @@ export class Editor {
         const i = this.pages.indexOf(p);
         const pt = this._pagePoint(e, i);
         const cur = p.objs.find(x => x.id === this._shEdit.id);
-        const n = { ...cur, [kx]: pt.x, [ky]: pt.y };
+        let n = { ...cur, [kx]: pt.x, [ky]: pt.y };
+        let sn = null;
+        if (cur.kind === 'line' || cur.kind === 'arrow') {
+          const [ox, oy] = kx === 'x1' ? [cur.x2, cur.y2] : [cur.x1, cur.y1];
+          sn = this._lineSnap(p, ox, oy, pt.x, pt.y, cur.id);
+          n = { ...cur, [kx]: sn.x, [ky]: sn.y };
+        }
         p.objs = p.objs.map(x => (x.id === cur.id ? n : x));
         this._shEdit.id = n.id;
         this._placeShapeEdit();
+        this._clearOverlay();
+        if (sn) this._drawAngle(i, sn);
         if (!this._shRaf) this._shRaf = requestAnimationFrame(() => { this._shRaf = 0; this._refreshPage(p); });
       });
       const up = () => {
@@ -1008,6 +1178,7 @@ export class Editor {
         p.objs = d.before;
         this._setObjs(p, after, 'ajustar forma');
         this._refreshPage(p);
+        this._clearOverlay();
       };
       el.addEventListener('pointerup', up);
       el.addEventListener('pointercancel', up);
@@ -1188,7 +1359,7 @@ export class Editor {
     const objs = this.selectedObjs();
     if (!objs.length) return false;
     const b = unionBox(objs);
-    this.clip = { w: b.w, h: b.h, objs: objs.map(o => transformObj(o, -b.x, -b.y)) };
+    this.clip = { w: b.w, h: b.h, objs: objs.map(o => transformObj(o, -b.x, -b.y)), t: Date.now() };
     try { localStorage.setItem('caderno.clip', JSON.stringify(this.clip)); } catch {}
     this.hooks.onClip?.(this.clip);
     return true;
@@ -1245,7 +1416,49 @@ export class Editor {
 
   _pasteAt(p, pt) {
     if (!this.stamp) return;
-    this._place(p, this.stamp, pt);
+    const s = this.stamp;
+    const ids = this._place(p, s, pt);
+    if (s.objs.some(o => o.t === 'img')) { this.setTool('lasso'); this.select(p, ids); this.hooks.onTool?.(); }
+  }
+
+  // ---------------- recorte (snip) ----------------
+  startSnip() {
+    this._closeText(); this.clearSelection(); this._endShapeEdit();
+    this.snipping = true;
+    this.viewer.classList.add('snipping');
+  }
+  cancelSnip() { this.snipping = false; this.viewer.classList.remove('snipping'); this._clearOverlay(); }
+
+  _drawSnipRect(g) {
+    this._clearOverlay();
+    const vr = this.viewer.getBoundingClientRect(), d = this.dpr, ctx = this.octx;
+    const x = (Math.min(g.sx, g.ex) - vr.left) * d, y = (Math.min(g.sy, g.ey) - vr.top) * d;
+    const w = Math.abs(g.ex - g.sx) * d, hh = Math.abs(g.ey - g.sy) * d;
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = 'rgba(0, 0, 128, .12)'; ctx.fillRect(x, y, w, hh);
+    ctx.setLineDash([6 * d, 4 * d]); ctx.lineWidth = 1.5 * d; ctx.strokeStyle = '#000080'; ctx.strokeRect(x, y, w, hh);
+    ctx.restore();
+  }
+
+  async _finishSnip(g, cancel) {
+    this.cancelSnip();
+    if (cancel || Math.abs(g.ex - g.sx) < 8 || Math.abs(g.ey - g.sy) < 8) return;
+    const mid = { clientX: (g.sx + g.ex) / 2, clientY: (g.sy + g.ey) / 2 };
+    let i = this._pageAtEvent(mid);
+    if (i < 0) i = g.pageIndex;
+    if (i == null || i < 0) return;
+    const p = this.pages[i];
+    const a = this._pagePoint({ clientX: Math.min(g.sx, g.ex), clientY: Math.min(g.sy, g.ey) }, i);
+    const b = this._pagePoint({ clientX: Math.max(g.sx, g.ex), clientY: Math.max(g.sy, g.ey) }, i);
+    const r = { x: Math.max(0, a.x), y: Math.max(0, a.y) };
+    r.w = Math.min(p.w, b.x) - r.x; r.h = Math.min(p.h, b.y) - r.y;
+    if (r.w < 3 || r.h < 3) return;
+    const scale = Math.min(4, Math.sqrt(4e6 / (r.w * r.h)), Math.max(2, this.dpr * this.zoom));
+    const c = await this.renderRegion(p, r, scale);
+    if (!c) return;
+    const src = c.toDataURL('image/jpeg', 0.9);
+    c.width = 0;
+    this.hooks.onSnip?.({ src, w: r.w, h: r.h });
   }
 
   _place(p, s, pt) {

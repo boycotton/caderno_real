@@ -66,6 +66,8 @@ export function driveExplorer(root, { mode = 'browse', start, startPath, startFo
   const crumbs = $('.crumbs', root);
   const searchInput = $('input[type=search]', root);
   const here = () => path[path.length - 1];
+  const inLocal = () => path[0].id === 'local';
+  const localId = () => (here().id === 'local' ? null : here().id);   // pasta do tablet (null = raiz)
 
   function go(newPath, { push = true } = {}) {
     if (push) back.push({ path: path.slice(), search });
@@ -84,7 +86,7 @@ export function driveExplorer(root, { mode = 'browse', start, startPath, startFo
       else if (a === 'up') { if (path.length > 1) go(path.slice(0, -1)); }
       else if (a === 'reload') load();
       else if (a === 'newfolder') newFolder();
-      else if (a === 'newnote') on.newNote?.(folderInfo());
+      else if (a === 'newnote') on.newNote?.(inLocal() ? { local: true, id: localId(), name: here().name } : folderInfo());
       else if (a === 'upload') $('.dx-file', root).click();
       return;
     }
@@ -123,6 +125,7 @@ export function driveExplorer(root, { mode = 'browse', start, startPath, startFo
     const dest = folderInfo();
     const n = await promptBox('Nova pasta', 'Nova pasta', { ok: 'Criar' });
     if (!n) return;
+    if (inLocal()) { on.newLocalFolder?.(n, localId()); return load(); }
     try {
       await drive.signIn();
       const f = await drive.createFolder(n, dest.id);
@@ -145,10 +148,10 @@ export function driveExplorer(root, { mode = 'browse', start, startPath, startFo
     $('[data-a=back]', root).disabled = !back.length;
     $('[data-a=up]', root).disabled = path.length <= 1 || !!search;
     const special = SPECIAL.has(here().id);
-    $('[data-a=newfolder]', root).disabled = special || !!search;
-    $$('[data-a=upload]', root).forEach(b => b.disabled = special || !!search);
-    $('.dx-tools .search', root).hidden = here().id === 'local';
-    $('.dx-where', root).textContent = here().id === 'local' ? 'Tablet' : folderInfo().name;
+    $('[data-a=newfolder]', root).disabled = (special && !inLocal()) || !!search;
+    $$('[data-a=upload]', root).forEach(b => b.disabled = special || inLocal() || !!search);
+    $('.dx-tools .search', root).hidden = inLocal();
+    $('.dx-where', root).textContent = inLocal() ? 'Tablet' : folderInfo().name;
     on.title?.(search ? 'Busca' : here().name);
     if (!search) on.navigate?.(path.slice());
   }
@@ -156,8 +159,8 @@ export function driveExplorer(root, { mode = 'browse', start, startPath, startFo
   async function load() {
     const seq = ++loadSeq;
     paintChrome();
-    if (here().id === 'local' && !search) {
-      const n = await on.renderLocal?.(list);
+    if (inLocal() && !search) {
+      const n = await on.renderLocal?.(list, localId(), { enter, reload: load });
       if (seq === loadSeq) $('.dx-count', root).textContent = `${n || 0} documento(s)`;
       return;
     }

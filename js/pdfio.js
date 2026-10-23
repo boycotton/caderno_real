@@ -149,6 +149,7 @@ export async function buildPdf(baseBytes, pages, { title } = {}) {
   let font = null;
   if (pages.some(p => p.objs.some(o => o.t === 'text'))) font = await doc.embedFont(StandardFonts.Helvetica);
 
+  const imgCache = new Map();
   for (const s of seq) {
     const leaf = s.page.node;
     const model = s.model;
@@ -187,9 +188,28 @@ export async function buildPdf(baseBytes, pages, { title } = {}) {
       };
     }
 
+    // recortes (imagens)
+    const xo = model.objs.some(o => o.t === 'img') ? subDict(ctx, res, 'XObject') : null;
+    const imgNames = new Map();
+    for (const o of model.objs) {
+      if (o.t !== 'img' || imgNames.has(o.src)) continue;
+      let emb = imgCache.get(o.src);
+      if (!emb) {
+        const b64 = o.src.split(',')[1] || '';
+        const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+        try { emb = /^data:image\/png/.test(o.src) ? await doc.embedPng(bytes) : await doc.embedJpg(bytes); } catch { emb = null; }
+        imgCache.set(o.src, emb);
+      }
+      if (!emb) continue;
+      const n = 'NAim' + (imgNames.size + 1);
+      xo.set(PDFName.of(n), emb.ref);
+      imgNames.set(o.src, n);
+    }
+    const imgName = o => imgNames.get(o.src);
+
     const inv = invert(model.m);
     let body = '';
-    for (const o of model.objs) body += objPdfOps(o, gsName, fontRef);
+    for (const o of model.objs) body += objPdfOps(o, gsName, fontRef, imgName);
     const ink = `/OC /NAoc BDC\nq ${inv.map(fx).join(' ')} cm\n${body}Q\nEMC\n`;
 
     const pre = ctx.register(ctx.stream('q\n'));

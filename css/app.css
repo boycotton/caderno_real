@@ -541,9 +541,9 @@ img, svg { -webkit-user-drag: none; }
 .jp-meta { color: #555; font-size: 12px; }
 
 /* alças de ajuste de forma (reta, seta, curva) */
-.sh-handle { position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px; border-radius: 50%; background: #fff; border: 3px solid #000080; box-shadow: 1px 1px 0 #000; z-index: 6; touch-action: none; cursor: grab; }
+.sh-handle { position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: rgba(255,255,255,.75); border: 2px solid #000080; z-index: 6; touch-action: none; cursor: grab; }
 .sh-handle.mid { border-color: #c05000; background: #ffe0b0; }
-.sh-handle::after { content: ""; position: absolute; inset: -12px; }
+.sh-handle::after { content: ""; position: absolute; inset: -14px; border-radius: 50%; }
 .jp-none { color: #555; padding: 4px 0; }
 
 /* lista de documentos na barra */
@@ -590,3 +590,24 @@ img, svg { -webkit-user-drag: none; }
 .task-x { width: 28px; flex: none; background: none; border: 0; font-size: 18px; font-weight: 700; }
 .task-x:active, .task-open:active { box-shadow: var(--pressed); }
 .start-menu { min-width: 220px; border-left: 22px solid var(--navy) !important; }
+
+/* calculadora (Windows 95) */
+.calc { position: absolute; right: 12px; top: 12px; width: 372px; z-index: 40; color: #000; user-select: none; }
+.calc-title { cursor: move; touch-action: none; }
+.calc-body { padding: 6px; }
+.calc-lcd { background: #c8d8b0; box-shadow: var(--field); padding: 4px 8px; margin-bottom: 6px; font-family: "VT323", monospace; text-align: right; }
+.calc-expr { min-height: 18px; font-size: 18px; color: #3a4a2a; overflow: hidden; white-space: nowrap; }
+.calc-out { font-size: 34px; line-height: 1; overflow: hidden; white-space: nowrap; }
+.calc-flags { display: flex; gap: 8px; font-size: 14px; color: #3a4a2a; }
+.calc-keys { display: grid; grid-template-columns: repeat(10, 1fr); gap: 3px; }
+.calc-keys .ck:nth-child(8) { grid-column: span 3; }
+.ck { height: 32px; padding: 0; font-size: 12px; background: var(--face); box-shadow: var(--raised); border: 0; color: #000080; font-weight: 700; }
+.ck:active { box-shadow: var(--pressed); }
+.ck.num { color: #000; font-size: 15px; }
+.ck.op { color: #c00000; font-size: 16px; }
+.ck.red { color: #c00000; }
+
+.page canvas.detail { inset: auto; pointer-events: none; }
+#viewer.snipping { cursor: crosshair; }
+
+#pageind { cursor: pointer; }

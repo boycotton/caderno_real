@@ -6,6 +6,7 @@ import { drawObj, newId } from './ink.js';
 import * as drive from './drive.js';
 import { driveExplorer, ROOTS, BIG } from './explorer.js';
 import { Learn } from './learn.js';
+import { Calculator } from './calc.js';
 import { icon, $, $$, h, esc, toast, modal, confirmBox, promptBox, popover, closePopovers, fmtDate, fmtSize } from './ui.js';
 
 const COLORS = ['#1a1a1a', '#1f4fd1', '#d32f2f', '#2e7d32', '#8e24aa', '#ef6c00', '#ffffff'];
@@ -23,6 +24,7 @@ const SHAPES = [['line', 'Linha'], ['arrow', 'Seta'], ['rect', 'Retângulo'], ['
 let ed;           // Editor
 let learn;        // modo あ
 let learnBusy = null;
+let calc;
 let cur = null;   // documento aberto
 let saving = false;
 let autosaveTimer;
@@ -42,6 +44,11 @@ function init() {
     onClip: () => renderToolbar(),
     onToast: m => toast(m, { ms: 4200 }),
     onPenOnly: () => renderToolbar(),
+    onSnip: async ({ src, w, h }) => {
+      ed.clip = { w, h, objs: [{ t: 'img', id: newId(), x: 0, y: 0, w, h, src }], t: Date.now() };
+      try { await store.set('snip', ed.clip); } catch {}
+      renderToolbar();
+    },
     onLearn: async (i, pt, e, mode) => {
       if (!learn || !cur) return;
       if (mode === 'tap') { if (i < 0 || !pt) return learn.hide(); learnBusy = learn.begin(cur, i, ed.pages[i], pt); return; }
@@ -51,8 +58,15 @@ function init() {
     },
   });
   learn = new Learn(ed, $('#stage'));
+  // último recorte (vale para todos os documentos, e sobrevive a fechar o app)
+  store.get('snip').then(c => { if (c && (!ed.clip || (c.t || 0) > (ed.clip.t || 0))) { ed.clip = c; renderToolbar(); } }).catch(() => {});
   window.__caderno = { get ed() { return ed; }, get doc() { return cur; }, get learn() { return learn; } };
   setupLock();
+  // renova o acesso ao Drive num toque da área de trabalho ou da barra (nunca no meio da escrita)
+  document.addEventListener('pointerup', e => {
+    if ($('#home').hidden && !e.target.closest('.topbar, .modal, .popover')) return;
+    drive.renewIfNeeded().then(ok => { if (ok) filesEx?.reload(); });
+  }, true);
   // app de verdade: nada de selecionar texto da interface nem menu de "copiar/pesquisar"
   document.addEventListener('contextmenu', e => { if (!e.target.closest('input, textarea, [contenteditable]')) e.preventDefault(); });
   document.addEventListener('selectstart', e => { if (!e.target.closest?.('input, textarea, [contenteditable]')) e.preventDefault(); });
@@ -300,9 +314,10 @@ function openFilesWin(start, startPath) {
     on: {
       navigate: path => setPref('openWin', { start, path }),
       openFile: openDriveFile,
-      newNote: folder => newNoteDialog(drive.isSignedIn() ? folder : undefined),
+      newNote: folder => newNoteDialog(folder?.local ? folder : drive.isSignedIn() ? folder : undefined),
       configure: openSettings,
-      renderLocal: el => renderRecents(el),
+      renderLocal: (el, folderId, nav) => renderRecents(el, folderId, nav),
+      newLocalFolder,
       pin: pinFolder,
       title: n => { const t = $('#fw-name'); if (t) t.textContent = n; },
       pickFolder: title => driveBrowser({ mode: 'folder', title, button: 'Mover para cá' }),
@@ -328,17 +343,56 @@ async function desktopNewFolder() {
   } catch (x) { toast('Não foi possível criar a pasta: ' + x.message, { kind: 'err', ms: 6000 }); }
 }
 
-async function renderRecents(list) {
-  const docs = await store.listDocs().catch(() => []);
+// ---------- "Neste tablet": pastas do tablet + documentos guardados ----------
+const lfolders = () => prefs().lfolders || [];
+function newLocalFolder(name, parent = null) {
+  setPref('lfolders', [...lfolders(), { id: 'lf_' + newId(), name, parent }]);
+}
+function folderPicker(anchor, onPick, skip) {
+  popover(anchor, (pop, close) => {
+    const all = [{ id: null, name: 'Neste tablet' }, ...lfolders().filter(f => f.id !== skip)];
+    for (const f of all) pop.append(menuItem(f.id ? 'folder' : 'pages', f.name, () => { close(); onPick(f.id); }));
+  }, { align: 'right' });
+}
+
+async function renderRecents(list, folderId = null, nav = {}) {
+  const docs = (await store.listDocs().catch(() => [])).filter(d => (d.folder || null) === folderId);
+  const fs = lfolders().filter(f => (f.parent || null) === folderId);
   list.innerHTML = '';
-  if (!docs.length) { list.innerHTML = '<p class="pad muted">Vazio.</p>'; return 0; }
+  if (!docs.length && !fs.length) { list.innerHTML = '<p class="pad muted">Vazio.</p>'; return 0; }
+  const reload = () => (nav.reload ? nav.reload() : renderRecents(list, folderId, nav));
+  for (const f of fs) {
+    const el = h(`<div class="d-tile" role="listitem" tabindex="0">${BIG.folder}<span class="d-name">${esc(f.name)}</span><button class="btn tiny-btn d-more" title="Opções">${icon('more', 'sm')}</button></div>`);
+    const menu = anchor => popover(anchor, (pop, close) => {
+      pop.append(menuItem('rename', 'Renomear…', async () => {
+        close();
+        const n = await promptBox('Renomear pasta', f.name, { ok: 'Renomear' });
+        if (n) { setPref('lfolders', lfolders().map(x => (x.id === f.id ? { ...x, name: n } : x))); reload(); }
+      }));
+      pop.append(menuItem('trash', 'Apagar pasta', async () => {
+        close();
+        if (!(await confirmBox('Apagar pasta?', `O que estiver dentro de “${f.name}” vai para a pasta de cima.`, { ok: 'Apagar', danger: true }))) return;
+        const all = await store.listDocs();
+        for (const d of all.filter(d => d.folder === f.id)) { d.folder = f.parent || null; await store.putDoc(d); }
+        setPref('lfolders', lfolders().filter(x => x.id !== f.id).map(x => (x.parent === f.id ? { ...x, parent: f.parent || null } : x)));
+        reload();
+      }));
+    }, { align: 'right' });
+    el.addEventListener('click', ev => { if (!ev.target.closest('.d-more')) nav.enter?.({ id: f.id, name: f.name }); });
+    el.addEventListener('contextmenu', ev => { ev.preventDefault(); menu(el); });
+    $('.d-more', el).onclick = ev => menu(ev.currentTarget);
+    list.appendChild(el);
+  }
   for (const d of docs) {
     const el = h(`<div class="d-tile" role="listitem" tabindex="0"><span class="r-thumb"></span><span class="d-name">${esc(d.name)}</span><button class="btn tiny-btn d-more" title="Opções">${icon('more', 'sm')}</button>${d.dirty ? '<span class="d-badge" title="Não enviado ao Drive">!</span>' : ''}</div>`);
     const menu = anchor => popover(anchor, (pop, close) => {
+      pop.append(menuItem('folder', 'Mover para pasta…', () => {
+        close();
+        folderPicker(anchor, async id => { d.folder = id; await store.putDoc(d); reload(); });
+      }));
       pop.append(menuItem('trash', 'Remover deste tablet', async () => {
         close();
-        if (d.dirty && !(await confirmBox('Remover?', 'Há alterações não salvas no Drive.', { ok: 'Remover', danger: true }))) return;
-        await store.deleteDoc(d.id); renderRecents(list);
+        if (await closeDoc(d)) { reload(); renderTasks(); }
       }));
     }, { align: 'right' });
     el.addEventListener('click', ev => { if (!ev.target.closest('.d-more')) resumeDoc(d.id); });
@@ -347,7 +401,7 @@ async function renderRecents(list) {
     list.appendChild(el);
     drawRecentThumb($('.r-thumb', el), d);
   }
-  return docs.length;
+  return docs.length + fs.length;
 }
 
 function drawRecentThumb(holder, d) {
@@ -438,8 +492,8 @@ async function newNoteDialog(folder = null) {
   const r = await templateDialog({ title: folder ? `Nova nota em “${folder.name}”` : 'Nova nota', forNew: true });
   if (!r) return;
   const pages = Array.from({ length: r.count }, () => templatePage(r.tpl));
-  const source = folder ? { t: 'new', parentId: folder.id, parentName: folder.name } : { t: 'new' };
-  cur = { id: newId(), name: r.name, source, baseBytes: null, pages, pdf: null, ocConfig: null, dirty: true };
+  const source = folder && !folder.local ? { t: 'new', parentId: folder.id, parentName: folder.name } : { t: 'new' };
+  cur = { id: newId(), name: r.name, source, baseBytes: null, pages, pdf: null, ocConfig: null, dirty: true, folder: folder?.local ? folder.id : null };
   setPref('lastTpl', r.tpl);
   await saveLocal();
   enterEditor();
@@ -542,7 +596,8 @@ function buildEditorChrome() {
       <div class="tb-group tools" id="tools"></div>
       <div class="tb-group">
         <button class="icon-btn" id="b-paste" title="Colar (toque na página)">${icon('paste')}</button>
-        <button class="icon-btn" id="b-stamps" title="Carimbos salvos">${icon('stamp')}</button>
+        <button class="icon-btn" id="b-snip" title="Recortar um pedaço da página (vira o item do Colar)">${icon('camera')}</button>
+        <button class="icon-btn" id="b-calc" title="Calculadora">${icon('calc')}</button>
       </div>
       <div class="optbar" id="optbar"></div>
       <div class="tb-group tb-right">
@@ -551,7 +606,7 @@ function buildEditorChrome() {
         <button class="icon-btn learn-btn" id="b-learn" title="Modo aprender língua: arraste a caneta sobre uma palavra japonesa do PDF">あ</button>
         <button class="icon-btn lock-btn" id="b-lock" title="Travar (tela cheia, não sai do app sem querer)">${icon('unlock')}</button>
         <button class="icon-btn" id="b-spen" title="Só a S Pen desenha" hidden>${icon('spen')}</button>
-        <button class="icon-btn" id="b-pages" title="Páginas">${icon('pages')}</button>
+        <button class="icon-btn" id="b-pages" title="Páginas" hidden>${icon('pages')}</button>
         <button class="save-btn" id="b-save" title="Salvar">${icon('floppy')}<span id="save-lbl">Salvar</span></button>
         <button class="icon-btn" id="b-more" title="Mais">${icon('more')}</button>
       </div>
@@ -566,7 +621,7 @@ function buildEditorChrome() {
     <footer class="statusbar">
       <button class="sb-panel sb-title" id="b-title" title="Renomear"><span id="doc-src"></span><span id="doc-title"></span></button>
       <span class="sb-panel sb-grow" id="st-save">Pronto</span>
-      <span class="sb-panel" id="pageind">1 / 1</span>
+      <button class="sb-panel" id="pageind" title="Páginas">1 / 1</button>
       <button class="sb-panel" id="b-fitw" title="Ajustar à largura"><span id="zoomind">100%</span></button>
     </footer>`;
   $('#b-fitw').onclick = () => ed.fitWidth();
@@ -588,14 +643,15 @@ function buildEditorChrome() {
   $('#b-paste').onclick = () => {
     if (!ed.clip) return toast('Nada copiado ainda. Selecione com o laço e toque em Copiar.');
     ed.setTool('paste', { stamp: ed.clip });
-    toast('Toque na página para colar. Cada toque cola mais uma cópia.');
   };
-  $('#b-stamps').onclick = ev => stampsMenu(ev.currentTarget);
+  $('#b-snip').onclick = () => { if (ed.snipping) ed.cancelSnip(); else ed.startSnip(); renderToolbar(); };
+  $('#b-calc').onclick = () => { calc = calc || new Calculator($('#stage')); calc.toggle(); };
   $('#b-spen').onclick = () => {
     ed.setPenOnly(!ed.penOnly);
     toast(ed.penOnly ? 'Só a S Pen desenha. Dedo: rolar e zoom.' : 'Dedo também desenha. Dois dedos: rolar e zoom.');
   };
   $('#b-pages').onclick = togglePagePanel;
+  $('#pageind').onclick = togglePagePanel;
   $('#b-lock').onclick = toggleLock;
   $('#b-docs').onclick = ev => docsMenu(ev.currentTarget);
   $('#b-assist').onclick = () => ed.setShapeAssist(!ed.shapeAssist);
@@ -606,7 +662,7 @@ function buildEditorChrome() {
 
   const sm = $('#selmenu');
   const smBtn = (ic, label, fn) => { const b = h(`<button title="${label}">${icon(ic)}<span>${label}</span></button>`); b.onclick = fn; sm.appendChild(b); };
-  smBtn('copy', 'Copiar', () => { ed.copySelection(); renderToolbar(); toast('Copiado. Toque em Colar e depois na página.'); });
+  smBtn('copy', 'Copiar', () => { ed.copySelection(); renderToolbar(); toast('Copiado', { ms: 1200 }); });
   smBtn('cut', 'Recortar', () => { ed.cutSelection(); renderToolbar(); });
   smBtn('dup', 'Duplicar', () => ed.duplicateSelection());
   smBtn('palette', 'Cor', ev => colorPop(ev.currentTarget, c => ed.recolorSelection(c)));
@@ -637,6 +693,7 @@ function renderOptbar() {
   ob.innerHTML = '';
   $('#b-learn')?.classList.toggle('on', !!ed.learn);
   $('#b-assist')?.classList.toggle('on', !!ed.shapeAssist);
+  $('#b-snip')?.classList.toggle('on', !!ed.snipping);
   if (ed.learn) {
     return;
   }
@@ -728,7 +785,7 @@ async function stampsMenu(anchor) {
     for (const s of list) {
       const b = h(`<div class="stamp"><button class="st-use"><span class="st-prev"></span><small>${esc(s.name)}</small></button><button class="st-del" title="Excluir">${icon('x', 'sm')}</button></div>`);
       $('.st-prev', b).appendChild(stampThumb(s));
-      $('.st-use', b).onclick = () => { close(); ed.setTool('paste', { stamp: s }); toast(`Toque na página para colar “${s.name}”.`); };
+      $('.st-use', b).onclick = () => { close(); ed.setTool('paste', { stamp: s });  };
       $('.st-del', b).onclick = async ev => {
         ev.stopPropagation();
         const all = (await getStamps()).filter(x => x.id !== s.id);
@@ -838,6 +895,8 @@ function moreMenu(anchor) {
   popover(anchor, (pop, close) => {
     pop.append(
       menuItem('spen', ed.penOnly ? 'Dedo também desenha' : 'Só a S Pen desenha', () => { close(); $('#b-spen').click(); }),
+      menuItem('stamp', 'Carimbos…', () => { close(); stampsMenu($('#b-more')); }),
+      menuItem('pages', 'Páginas', () => { close(); togglePagePanel(); }),
       menuItem('fit', 'Ajustar à largura', () => { close(); ed.fitWidth(); }),
       menuItem('plus', 'Adicionar página', () => { close(); addPageDialog(); }),
       menuItem('trash', 'Limpar anotações desta página', async () => {
@@ -921,7 +980,7 @@ async function saveLocal(doc = cur) {
   if (!doc) return;
   if (doc === cur) clearTimeout(autosaveTimer);
   const rec = {
-    id: doc.id, name: doc.name, source: doc.source, dirty: !!doc.dirty, renamePending: !!doc.renamePending,
+    id: doc.id, name: doc.name, source: doc.source, dirty: !!doc.dirty, renamePending: !!doc.renamePending, folder: doc.folder || null,
     pages: doc.pages.map(p => ({ id: p.id, w: p.w, h: p.h, m: p.m, src: p.src, tpl: p.tpl, objs: p.objs })),
     pageCount: doc.pages.length, updatedAt: Date.now(),
   };

@@ -40,14 +40,15 @@ try {
 
 // Pede (ou renova) o token. Precisa ser chamado a partir de um toque do usuário
 // na primeira vez, porque abre a janela de login do Google.
-export async function signIn({ silent = false } = {}) {
-  if (isSignedIn()) return token.access_token;
+export async function signIn({ silent = false, force = false } = {}) {
+  if (isSignedIn() && !force) return token.access_token;
   if (!isConfigured()) throw new Error('Configure o ID do cliente do Google em Configurações.');
   await loadGis();
   if (!tokenClient || tokenClient._cid !== clientId()) {
     tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: clientId(),
       scope: SCOPE,
+      hint: localStorage.getItem('caderno.email') || undefined,
       callback: r => {
         const p = pending; pending = null;
         if (!p) return;
@@ -57,6 +58,9 @@ export async function signIn({ silent = false } = {}) {
         localStorage.setItem('caderno.driveUsed', '1');
         p.res(token.access_token);
         window.dispatchEvent(new Event('drive-signed-in'));
+        // guarda o e-mail para os próximos logins irem direto, sem escolher conta
+        if (!localStorage.getItem('caderno.email')) fetch(`${API}/about?fields=user(emailAddress)`, { headers: { Authorization: `Bearer ${token.access_token}` } })
+          .then(r => r.json()).then(j => { if (j.user?.emailAddress) { localStorage.setItem('caderno.email', j.user.emailAddress); tokenClient = null; } }).catch(() => {});
       },
       error_callback: e => {
         const p = pending; pending = null;
@@ -67,14 +71,27 @@ export async function signIn({ silent = false } = {}) {
   }
   return new Promise((res, rej) => {
     pending = { res, rej };
-    tokenClient.requestAccessToken({ prompt: silent || localStorage.getItem('caderno.driveUsed') ? '' : 'consent' });
+    const hint = localStorage.getItem('caderno.email');
+    tokenClient.requestAccessToken({ prompt: silent || localStorage.getItem('caderno.driveUsed') ? '' : 'consent', ...(hint ? { hint } : {}) });
   });
+}
+
+// O Google só dá acesso por 1 hora de cada vez (app sem servidor). Renova sozinho num toque antes de vencer,
+// já com a conta certa — a janelinha do Google abre e fecha sem pedir nada.
+let renewing = null;
+export function renewIfNeeded() {
+  if (!isConfigured() || !localStorage.getItem('caderno.driveUsed')) return Promise.resolve(false);
+  if (token && token.expires_at > Date.now() + 10 * 60_000) return Promise.resolve(false);
+  if (!renewing) renewing = signIn({ silent: true, force: true }).then(() => true, () => false).finally(() => { renewing = null; });
+  return renewing;
 }
 
 export function signOut() {
   if (token && window.google?.accounts?.oauth2) google.accounts.oauth2.revoke(token.access_token, () => {});
   token = null;
   localStorage.removeItem('caderno.token');
+  localStorage.removeItem('caderno.email');
+  tokenClient = null;
 }
 
 async function api(url, opts = {}, retry = true) {

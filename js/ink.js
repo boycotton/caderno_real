@@ -115,6 +115,8 @@ export function geom(o) {
     const w = Math.max(4, ...lines.map(l => textWidth(l, o.size)));
     const h = lines.length * o.size * LINE_H;
     g.bbox = { x: o.x, y: o.y, w, h };
+  } else if (o.t === 'img') {
+    g.bbox = { x: o.x, y: o.y, w: o.w, h: o.h };
   }
   cache.set(o, g);
   return g;
@@ -156,8 +158,26 @@ export function drawObj(ctx, o) {
     ctx.font = `${o.size}px ${FONT_STACK}`;
     ctx.textBaseline = 'alphabetic';
     textLines(o).forEach((line, i) => ctx.fillText(line, o.x, o.y + o.size * (0.95 + i * LINE_H)));
+  } else if (o.t === 'img') {
+    const im = imageFor(o.src);
+    if (im.complete && im.naturalWidth) ctx.drawImage(im, o.x, o.y, o.w, o.h);
+    else { ctx.fillStyle = '#e8e8e8'; ctx.fillRect(o.x, o.y, o.w, o.h); }
   }
   ctx.restore();
+}
+
+// imagens (recortes): decodificadas uma vez; quando terminam de carregar, avisa para redesenhar
+const images = new Map();
+export const imageHooks = { onLoad: null };
+export function imageFor(src) {
+  let im = images.get(src);
+  if (!im) {
+    im = new Image();
+    im.onload = () => imageHooks.onLoad?.();
+    im.src = src;
+    images.set(src, im);
+  }
+  return im;
 }
 
 // ---------- geometria / toque ----------
@@ -191,7 +211,7 @@ export function hitObj(o, x, y, r) {
     if (o.fill && closed && pointInPoly(x, y, pts)) return true;
     return false;
   }
-  return true; // texto: dentro da caixa
+  return true; // texto e imagem: dentro da caixa
 }
 
 export function pointInPoly(x, y, poly) {
@@ -222,6 +242,7 @@ export function transformObj(o, dx, dy, s = 1, ox = 0, oy = 0, keepId = true) {
   if (o.t === 'stroke') { n.pts = o.pts.map(p => [X(p[0]), Y(p[1]), p[2]]); n.size = o.size * s; }
   else if (o.t === 'shape') { n.x1 = X(o.x1); n.y1 = Y(o.y1); n.x2 = X(o.x2); n.y2 = Y(o.y2); n.size = Math.max(0.3, o.size * s); if (o.pts) n.pts = o.pts.map(p => [X(p[0]), Y(p[1])]); if (o.cx != null) { n.cx = X(o.cx); n.cy = Y(o.cy); } }
   else if (o.t === 'text') { n.x = X(o.x); n.y = Y(o.y); n.size = o.size * s; }
+  else if (o.t === 'img') { n.x = X(o.x); n.y = Y(o.y); n.w = o.w * s; n.h = o.h * s; }
   return n;
 }
 
@@ -250,7 +271,7 @@ const f = n => (Math.round(n * 100) / 100).toString();
 
 // Gera operadores PDF para um objeto. `gs(alpha)` devolve o nome do ExtGState de opacidade,
 // `font` = { name, encode(text) -> hex } para texto.
-export function objPdfOps(o, gs, font) {
+export function objPdfOps(o, gs, font, img) {
   const g = geom(o);
   let out = 'q\n';
   if (o.t === 'stroke') {
@@ -279,6 +300,9 @@ export function objPdfOps(o, gs, font) {
       const y = o.y + o.size * (0.95 + i * LINE_H);
       out += `BT /${font.name} ${f(o.size)} Tf 1 0 0 -1 ${f(o.x)} ${f(y)} Tm ${font.encode(line)} Tj ET\n`;
     });
+  } else if (o.t === 'img' && img) {
+    const name = img(o);
+    if (name) out += `${f(o.w)} 0 0 ${f(-o.h)} ${f(o.x)} ${f(o.y + o.h)} cm /${name} Do\n`;
   }
   return out + 'Q\n';
 }

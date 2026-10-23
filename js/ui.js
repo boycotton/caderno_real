@@ -49,6 +49,8 @@ const P = {
   cloudoff: '<path d="M3 3l18 18"/><path d="M8.5 8.4A6 6 0 0117.7 8 4 4 0 0119.6 15M16 18H7a4.5 4.5 0 01-1.6-8.7"/>',
   logout: '<path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/>',
   rename: '<path d="M4 20h16"/><path d="M14.5 4.5l3 3L8 17H5v-3z"/>',
+  camera: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  calc: '<rect x="5" y="3" width="14" height="18" rx="1"/><path d="M8 6h8v3H8z"/><path d="M8 13h0M12 13h0M16 13h0M8 17h0M12 17h0M16 17h0" stroke-width="2.6"/>',
   magic: '<path d="M4 20L15 9"/><path d="M14 6l1-3 1 3 3 1-3 1-1 3-1-3-3-1z"/><path d="M19 13l.6 1.4L21 15l-1.4.6L19 17l-.6-1.4L17 15l1.4-.6z"/>',
   lock: '<rect x="5" y="11" width="14" height="10" rx="1"/><path d="M8 11V7.5a4 4 0 018 0V11"/><path d="M12 15v2"/>',
   unlock: '<rect x="5" y="11" width="14" height="10" rx="1"/><path d="M8 11V7.5a4 4 0 017.6-1.7"/>',
