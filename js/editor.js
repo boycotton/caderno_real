@@ -252,7 +252,7 @@ export class Editor {
       const p = this.pages[i], v = this.views.get(p.id);
       if (!v || v.dead) continue;
       const vis = L.y + L.h > top && L.y < top + vh && L.x + L.w > left && L.x < left + vw;
-      const need = this._pxRatio(p) < this.dpr * this.zoom * 0.99;
+      const need = true;   // a camada de detalhe também é onde a caneta desenha direto (caminho rápido)
       if (!vis || !need) { this._dropDetail(v); continue; }
       const z = this.zoom, s = this.dpr * z;
       const mx = vw * 0.15, my = vh * 0.15;
@@ -265,7 +265,13 @@ export class Editor {
       const base = await this.renderRegion(p, { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }, s, { ink: false });
       if (!base || v.dead || v.dtSeq !== seq || this.zoom !== z) continue;
       let c = v.dt?.c;
-      if (!c) { c = document.createElement('canvas'); c.className = 'detail'; v.el.appendChild(c); }
+      if (!c) {
+        c = document.createElement('canvas'); c.className = 'detail';
+        // opaca + desynchronized: o Chrome pode desenhar direto na tela (baixa latência) e esconder o que está por baixo
+        c.getContext('2d', { alpha: false, desynchronized: true });
+        c.addEventListener('contextrestored', () => { if (v.dt?.c === c) { v.dt.z = 0; this._scheduleDetail(); } });
+        v.el.appendChild(c);
+      }
       c.width = base.width; c.height = base.height;
       c.style.left = x0 * z + 'px'; c.style.top = y0 * z + 'px'; c.style.width = (x1 - x0) * z + 'px'; c.style.height = (y1 - y0) * z + 'px';
       v.dt = { c, base, x: x0, y: y0, w: x1 - x0, h: y1 - y0, s, z };
@@ -393,13 +399,13 @@ export class Editor {
     this.overlay.width = Math.round(w * this.dpr); this.overlay.height = Math.round(hgt * this.dpr);
   }
 
-  _inkAdd(p, o) {
+  _inkAdd(p, o, { skipDetail = false } = {}) {
     const v = this.views.get(p.id);
     if (!v?.ink || v.inkDirty) { if (v) { v.inkDirty = true; this._scheduleRender(); } return; }
     const ctx = v.ink.getContext('2d');
     ctx.setTransform(v.ink.width / p.w, 0, 0, v.ink.height / p.h, 0, 0);
     drawObj(ctx, o);
-    if (v.dt) { const d = v.dt, dc = d.c.getContext('2d'); dc.setTransform(d.s, 0, 0, d.s, -d.x * d.s, -d.y * d.s); drawObj(dc, o); }
+    if (v.dt && !skipDetail) { const d = v.dt, dc = d.c.getContext('2d'); dc.setTransform(d.s, 0, 0, d.s, -d.x * d.s, -d.y * d.s); drawObj(dc, o); }
   }
 
   _refreshPage(p) {
@@ -932,16 +938,17 @@ export class Editor {
         const n = { t: 'shape', color: g.obj.color, size: Math.max(0.8, g.obj.size * (g.tool === 'pencil' ? 0.9 : 0.75)), fill: null, ...r, id: newId() };
         this._clearOverlay();
         this._setObjs(p, [...p.objs, n]);
-        this._inkAdd(p, n);
+        this._inkAdd(p, n, { skipDetail: !!g.onDetail });
+        if (g.onDetail) { const v = this.views.get(p.id); if (v) this._composeDetail(v); }
         if (n.kind === 'curve' || n.kind === 'line' || n.kind === 'arrow') this._startShapeEdit(p, n.id);
         return;
       }
     }
     if (g.obj?.t === 'stroke') {
-      if (cancel && g.obj.pts.length < 3) { this._clearOverlay(); return; }
+      if (cancel && g.obj.pts.length < 3) { this._clearOverlay(); if (g.onDetail) { const v = this.views.get(p.id); if (v) this._composeDetail(v); } return; }
       const o = { ...g.obj, id: newId(), pts: simplifyPts(g.obj.pts, 0.08 / Math.max(0.5, this.zoom)) };
       this._setObjs(p, [...p.objs, o]);
-      this._inkAdd(p, o);
+      this._inkAdd(p, o, { skipDetail: !!g.onDetail });
       this._clearOverlay();
     } else if (g.tool === 'eraser') {
       this._clearOverlay();
@@ -990,6 +997,7 @@ export class Editor {
     const r = recognize(g.obj.pts);
     if (!r) return;
     g.snapped = true;
+    if (g.onDetail) { const v = this.views.get(g.page.id); if (v) this._composeDetail(v); g.onDetail = false; }
     g.obj = { t: 'shape', color: g.obj.color, size: Math.max(0.8, g.obj.size * (g.tool === 'pencil' ? 0.9 : 0.75)), fill: null, ...r };
     this._drawLiveObj(g.pageIndex, g.obj);
     if (r.kind === 'line' || r.kind === 'arrow') this._drawAngle(g.pageIndex, this._lineSnap(g.page, r.x1, r.y1, r.x2, r.y2));
@@ -1044,6 +1052,7 @@ export class Editor {
   _cancelDraw() {
     const g = this.gesture;
     if (g) clearTimeout(g.holdT);
+    if (g?.onDetail) { const v = this.views.get(g.page.id); if (v) this._composeDetail(v); }
     if (g?.tool === 'eraser' && g.removed.size) { g.page.objs = g.before; this._refreshPage(g.page); }
     if (g?.tool === 'move' || g?.tool === 'scale') { this.sel.moving = false; this._refreshPage(this.pageById(this.sel.pageId)); this._placeSelection(); }
     this.gesture = null;
@@ -1112,6 +1121,16 @@ export class Editor {
         drawStrokeSegs(this._overlayFor(g.pageIndex), g.obj, 0);
         g.liveN = g.obj.pts.length;
       });
+      return;
+    }
+    // caminho rápido: escreve direto na camada de detalhe (opaca, baixa latência), que já é o desenho final
+    const v = this.views.get(g.page.id), d = v?.dt;
+    if (d && d.z === this.zoom && (g.onDetail || !g.liveN)) {
+      const dc = d.c.getContext('2d');
+      dc.setTransform(d.s, 0, 0, d.s, -d.x * d.s, -d.y * d.s);
+      drawStrokeSegs(dc, g.obj, g.liveN || 0);
+      g.onDetail = true;
+      g.liveN = n;
       return;
     }
     const ctx = this._overlayFor(g.pageIndex);
