@@ -1,35 +1,54 @@
 // Objetos desenhados na página: traços (caneta, lápis, marca-texto), formas e texto.
 // Coordenadas sempre em pontos da página (origem no canto superior esquerdo).
-import { getStroke } from '../vendor/perfect-freehand.mjs';
 
 let _id = 0;
 export const newId = () => Date.now().toString(36) + (_id++).toString(36) + Math.random().toString(36).slice(2, 6);
 
 export const TOOL_STYLE = {
-  pen:    { thinning: 0.5, smoothing: 0.2, streamline: 0.05, opacity: 1 },
-  pencil: { thinning: 0.25, smoothing: 0.2, streamline: 0.05, opacity: 0.78 },
-  marker: { thinning: 0,    smoothing: 0.6,  streamline: 0.55, opacity: 0.35 },
+  pen:    { thinning: 0.5, opacity: 1 },
+  pencil: { thinning: 0.25, opacity: 1 },
+  marker: { thinning: 0, opacity: 0.35 },
 };
+
+// Traço = segmentos com pontas redondas, largura pela pressão. É determinístico: o que já foi desenhado
+// nunca muda quando chegam pontos novos (sem "tremer"), e o desenho ao vivo é idêntico ao final.
+export function strokeWidth(o, pr) {
+  const th = (TOOL_STYLE[o.tool] || TOOL_STYLE.pen).thinning * (o.sim ? 0 : 1);
+  return Math.max(0.3, o.size * 2 * (0.5 - th * (0.5 - (pr ?? 0.5))));
+}
+
+// desenha os segmentos a partir do ponto `from` (para o traço ao vivo ir só acrescentando)
+export function drawStrokeSegs(ctx, o, from = 0) {
+  const pts = o.pts;
+  if (!pts.length) return;
+  ctx.save();
+  ctx.strokeStyle = ctx.fillStyle = o.color;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (o.tool === 'marker') {
+    // largura constante: um caminho só (a transparência não escurece nas emendas)
+    ctx.globalAlpha = TOOL_STYLE.marker.opacity;
+    ctx.lineWidth = o.size;
+    ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]);
+    for (let k = 1; k < pts.length; k++) ctx.lineTo(pts[k][0], pts[k][1]);
+    if (pts.length === 1) ctx.lineTo(pts[0][0] + 0.01, pts[0][1]);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+  if (from === 0) {
+    ctx.beginPath(); ctx.arc(pts[0][0], pts[0][1], strokeWidth(o, pts[0][2]) / 2, 0, Math.PI * 2); ctx.fill();
+  }
+  for (let k = Math.max(1, from); k < pts.length; k++) {
+    ctx.lineWidth = strokeWidth(o, (pts[k - 1][2] + pts[k][2]) / 2);
+    ctx.beginPath(); ctx.moveTo(pts[k - 1][0], pts[k - 1][1]); ctx.lineTo(pts[k][0], pts[k][1]); ctx.stroke();
+  }
+  ctx.restore();
+}
 
 export const FONT_STACK = 'Helvetica, Arial, "Liberation Sans", sans-serif';
 
 import { curvePoints } from './recognize.js';
 const cache = new WeakMap(); // objeto -> { path, poly, bbox }
-
-function strokeOutline(o) {
-  const st = TOOL_STYLE[o.tool] || TOOL_STYLE.pen;
-  const pts = o.pts;
-  return getStroke(pts.map(p => [p[0], p[1], p[2] ?? 0.5]), {
-    size: o.size,
-    thinning: o.sim ? st.thinning * 0.6 : st.thinning,
-    smoothing: st.smoothing,
-    streamline: st.streamline,
-    simulatePressure: !!o.sim,
-    last: !o.live,
-    start: { cap: o.tool !== 'marker', taper: 0 },
-    end: { cap: o.tool !== 'marker', taper: 0 },
-  });
-}
 
 function ellipsePoints(cx, cy, rx, ry, n = 56) {
   const out = [];
@@ -81,16 +100,7 @@ export function geom(o) {
   if (g) return g;
   g = {};
   if (o.t === 'stroke') {
-    const poly = strokeOutline(o);
-    g.poly = poly;
-    const p = new Path2D();
-    if (poly.length) {
-      p.moveTo(poly[0][0], poly[0][1]);
-      for (let i = 1; i < poly.length; i++) p.lineTo(poly[i][0], poly[i][1]);
-      p.closePath();
-    }
-    g.path = p;
-    g.bbox = bboxOf(poly.length ? poly : o.pts, 0);
+    g.bbox = bboxOf(o.pts, o.size * 1.6);
   } else if (o.t === 'shape') {
     const sh = shapeOutline(o);
     g.outline = sh;
@@ -143,10 +153,7 @@ export function drawObj(ctx, o) {
   const g = geom(o);
   ctx.save();
   if (o.t === 'stroke') {
-    const st = TOOL_STYLE[o.tool] || TOOL_STYLE.pen;
-    ctx.globalAlpha = st.opacity;
-    ctx.fillStyle = o.color;
-    ctx.fill(g.path);
+    drawStrokeSegs(ctx, o);
   } else if (o.t === 'shape') {
     ctx.lineWidth = o.size; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     ctx.strokeStyle = o.color;
@@ -275,14 +282,24 @@ export function objPdfOps(o, gs, font, img) {
   const g = geom(o);
   let out = 'q\n';
   if (o.t === 'stroke') {
-    const st = TOOL_STYLE[o.tool] || TOOL_STYLE.pen;
-    if (st.opacity < 1) out += `/${gs(st.opacity)} gs\n`;
-    out += `${pdfRgb(o.color)} rg\n`;
-    const p = g.poly;
-    if (p.length) {
-      out += `${f(p[0][0])} ${f(p[0][1])} m\n`;
-      for (let i = 1; i < p.length; i++) out += `${f(p[i][0])} ${f(p[i][1])} l\n`;
-      out += 'h f\n';
+    const pts = o.pts;
+    out += `${pdfRgb(o.color)} RG ${pdfRgb(o.color)} rg 1 J 1 j\n`;
+    if (o.tool === 'marker') {
+      out += `/${gs(TOOL_STYLE.marker.opacity)} gs ${f(o.size)} w ${f(pts[0][0])} ${f(pts[0][1])} m\n`;
+      for (let k = 1; k < pts.length; k++) out += `${f(pts[k][0])} ${f(pts[k][1])} l\n`;
+      if (pts.length === 1) out += `${f(pts[0][0] + 0.01)} ${f(pts[0][1])} l\n`;
+      out += 'S\n';
+    } else {
+      // segmentos agrupados por largura (arredondada) para o arquivo não ficar grande
+      let curW = null, path = '';
+      const flush = () => { if (path) out += `${f(curW)} w ${path}S\n`; path = ''; };
+      if (pts.length === 1) out += `${f(strokeWidth(o, pts[0][2]))} w ${f(pts[0][0])} ${f(pts[0][1])} m ${f(pts[0][0] + 0.01)} ${f(pts[0][1])} l S\n`;
+      for (let k = 1; k < pts.length; k++) {
+        const w = Math.round(strokeWidth(o, (pts[k - 1][2] + pts[k][2]) / 2) * 20) / 20;
+        if (w !== curW) { flush(); curW = w; path = `${f(pts[k - 1][0])} ${f(pts[k - 1][1])} m `; }
+        path += `${f(pts[k][0])} ${f(pts[k][1])} l `;
+      }
+      flush();
     }
   } else if (o.t === 'shape') {
     out += `${pdfRgb(o.color)} RG ${f(o.size)} w 1 J 1 j\n`;

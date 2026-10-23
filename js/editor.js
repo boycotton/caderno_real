@@ -1,5 +1,5 @@
 // Editor de páginas: exibição, zoom, ferramentas e entrada da S Pen.
-import { drawObj, geom, hitObj, inLasso, transformObj, unionBox, simplifyPts, newId, TOOL_STYLE, imageHooks } from './ink.js';
+import { drawObj, geom, hitObj, inLasso, transformObj, unionBox, simplifyPts, newId, TOOL_STYLE, imageHooks, drawStrokeSegs } from './ink.js';
 import { drawTemplateCanvas } from './templates.js';
 import { recognize } from './recognize.js';
 import { prefs, setPref } from './store.js';
@@ -862,7 +862,9 @@ export class Editor {
         const q = this._pagePoint(ce, g.pageIndex);
         const lastP = g.obj.pts[g.obj.pts.length - 1];
         if (Math.hypot(q.x - lastP[0], q.y - lastP[1]) * this.zoom < 0.6) continue;
-        g.obj.pts.push([q.x, q.y, this._pressure(ce)]);
+        // suavização leve e só para frente (o que já foi desenhado não muda); a pressão da S Pen oscila, então é a mais suavizada
+        const pr = lastP[2] + (this._pressure(ce) - lastP[2]) * 0.35;
+        g.obj.pts.push([lastP[0] + (q.x - lastP[0]) * 0.75, lastP[1] + (q.y - lastP[1]) * 0.75, pr]);
       }
       this._drawLive();
     } else if (g.tool === 'eraser') {
@@ -1068,16 +1070,22 @@ export class Editor {
     return this.octx;
   }
 
+  // Traço ao vivo: acrescenta só os segmentos novos (o marca-texto, de largura fixa, é redesenhado inteiro).
   _drawLive() {
     if (this._liveRaf) return;
     this._liveRaf = requestAnimationFrame(() => {
       this._liveRaf = 0;
       const g = this.gesture;
       if (!g?.obj || g.obj.t !== 'stroke') return;
-      // só redesenha se chegou ponto novo; traço "em andamento" (sem fechar a ponta) para não tremer
-      if (g.liveN === g.obj.pts.length) return;
-      g.liveN = g.obj.pts.length;
-      this._drawLiveObj(g.pageIndex, { ...g.obj, live: true });
+      const n = g.obj.pts.length;
+      if (g.liveN === n) return;
+      const ctx = this._overlayFor(g.pageIndex);
+      if (g.obj.tool === 'marker' || !g.liveN) {
+        this._clearOverlay();
+        this._overlayFor(g.pageIndex);
+        drawStrokeSegs(ctx, g.obj, 0);
+      } else drawStrokeSegs(ctx, g.obj, g.liveN);
+      g.liveN = n;
     });
   }
 
