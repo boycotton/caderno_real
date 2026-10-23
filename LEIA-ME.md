@@ -148,7 +148,8 @@ Atalhos com teclado físico: Ctrl+Z / Ctrl+Y, Ctrl+C / Ctrl+X / Ctrl+V, Ctrl+D (
 - Voltar para a área de trabalho **não fecha** o documento: ele aparece na **barra de tarefas** (embaixo) e volta
   na hora, na mesma página. Se você editou um arquivo do Drive, ele é **enviado sozinho** ao voltar.
 - Abrir de novo pelo Drive usa a cópia do tablet; só baixa outra vez se o arquivo mudou no Drive.
-- **×** na barra de tarefas (ou na lista ▾ do editor) fecha o documento e apaga a cópia do tablet.
+- **×** na barra de tarefas (ou na lista ▾ do editor) **salva e fecha**: arquivo do Drive é enviado; nota nova vai
+  para a pasta onde foi criada ou o app pergunta (Salvar no Drive… / Baixar PDF / Fechar sem salvar).
 - **Iniciar** (canto inferior esquerdo): Nova nota, Nova pasta, Abrir PDF do tablet, Configurações.
 
 O campo com o nome do documento na barra (▾) lista os documentos abertos/recentes: toque para trocar, **×** para fechar.

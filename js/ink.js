@@ -25,7 +25,7 @@ function strokeOutline(o) {
     smoothing: st.smoothing,
     streamline: st.streamline,
     simulatePressure: !!o.sim,
-    last: true,
+    last: !o.live,
     start: { cap: o.tool !== 'marker', taper: 0 },
     end: { cap: o.tool !== 'marker', taper: 0 },
   });

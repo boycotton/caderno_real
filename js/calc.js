@@ -71,7 +71,7 @@ const fmt = v => {
 
 // ---------- janela ----------
 const KEYS = [
-  ['sin', 'cos', 'tan', 'ln', 'log', '(', ')', 'C'],
+  ['sin', 'cos', 'tan', 'ln', 'log', '(', ')', 'Limpar'],
   ['asin', 'acos', 'atan', '√', 'x²', '7', '8', '9', '÷', '⌫'],
   ['π', 'e', 'x^y', '!', '%', '4', '5', '6', '×', 'Ans'],
   ['sinh', 'cosh', 'tanh', '1/x', '±', '1', '2', '3', '−', '='],
@@ -99,7 +99,7 @@ export class Calculator {
       </div></div>`);
     const keys = $('.calc-keys', el);
     KEYS.flat().forEach(k => {
-      const b = h(`<button class="ck ${/^[0-9,]$/.test(k) ? 'num' : ''} ${['÷', '×', '−', '+', '='].includes(k) ? 'op' : ''} ${['C', '⌫'].includes(k) ? 'red' : ''}">${k}</button>`);
+      const b = h(`<button class="ck ${/^[0-9,]$/.test(k) ? 'num' : ''} ${['÷', '×', '−', '+', '='].includes(k) ? 'op' : ''} ${['Limpar', '⌫'].includes(k) ? 'red' : ''} ${k === 'Limpar' ? 'clr' : ''}">${k}</button>`);
       b.onclick = () => this.key(k);
       keys.appendChild(b);
     });
@@ -124,7 +124,7 @@ export class Calculator {
     this.el = el;
   }
   key(k) {
-    if (k === 'C') { this.expr = ''; this.out = '0'; }
+    if (k === 'Limpar') { this.expr = ''; this.out = '0'; this.last = ''; this.fresh = false; }
     else if (k === '⌫') { this.expr = this.expr.replace(/(asin\(|acos\(|atan\(|sinh\(|cosh\(|tanh\(|sin\(|cos\(|tan\(|ln\(|log\(|abs\(|cbrt\(|√\(|Ans|.)$/, ''); }
     else if (k === '=') {
       try { const v = evaluate(this.expr || '0', { deg: this.deg, ans: this.ans }); this.ans = v; this.out = fmt(v); this.last = this.expr; this.expr = ''; this.fresh = true; }

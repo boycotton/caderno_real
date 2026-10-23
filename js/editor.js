@@ -148,6 +148,8 @@ export class Editor {
 
   _onResize() {
     const w = this.viewer.clientWidth, hgt = this.viewer.clientHeight;
+    if (w === this._vw && hgt === this._vh) return;      // nada mudou: não apaga a camada do traço
+    this._vw = w; this._vh = hgt;
     this.overlay.width = Math.round(w * this.dpr);
     this.overlay.height = Math.round(hgt * this.dpr);
     this.overlay.style.width = w + 'px';
@@ -862,8 +864,6 @@ export class Editor {
         if (Math.hypot(q.x - lastP[0], q.y - lastP[1]) * this.zoom < 0.6) continue;
         g.obj.pts.push([q.x, q.y, this._pressure(ce)]);
       }
-      g.pred = [];
-      if (e.getPredictedEvents) for (const pe of e.getPredictedEvents().slice(0, 2)) { const q = this._pagePoint(pe, g.pageIndex); g.pred.push([q.x, q.y, this._pressure(pe)]); }
       this._drawLive();
     } else if (g.tool === 'eraser') {
       for (const ce of list) this._eraseAt(g, this._pagePoint(ce, g.pageIndex));
@@ -1074,14 +1074,16 @@ export class Editor {
       this._liveRaf = 0;
       const g = this.gesture;
       if (!g?.obj || g.obj.t !== 'stroke') return;
-      const o = g.pred?.length ? { ...g.obj, pts: g.obj.pts.concat(g.pred) } : { ...g.obj };
-      this._drawLiveObj(g.pageIndex, o);
+      // só redesenha se chegou ponto novo; traço "em andamento" (sem fechar a ponta) para não tremer
+      if (g.liveN === g.obj.pts.length) return;
+      g.liveN = g.obj.pts.length;
+      this._drawLiveObj(g.pageIndex, { ...g.obj, live: true });
     });
   }
 
   _drawLiveObj(i, o) {
     this._clearOverlay();
-    if (this.gesture) this.gesture.liveN = 0;
+    if (this.gesture && !o.live) this.gesture.liveN = 0;
     const ctx = this._overlayFor(i);
     drawObj(ctx, o);
   }

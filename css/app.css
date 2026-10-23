@@ -611,3 +611,7 @@ img, svg { -webkit-user-drag: none; }
 #viewer.snipping { cursor: crosshair; }
 
 #pageind { cursor: pointer; }
+/* o asterisco de "não salvo" não pode mudar a largura do botão (mexeria no layout enquanto escreve) */
+.save-btn { position: relative; }
+.save-btn.dirty::after { position: absolute; right: 3px; top: 2px; margin: 0; line-height: 1; }
+.ck.clr { font-size: 14px; letter-spacing: 1px; }

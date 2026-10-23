@@ -252,14 +252,56 @@ async function renderTasks() {
   }
 }
 
-// Fecha um documento aberto (tira da memória e do tablet). Pergunta se houver algo não salvo.
+// Fecha um documento aberto. Por padrão SALVA antes: arquivo do Drive é enviado; nota nova vai para a pasta
+// em que foi criada (ou pergunta onde). Só depois tira da memória e do tablet.
 async function closeDoc(d) {
-  if (d.dirty && d.source?.t !== 'drive' && !(await confirmBox('Fechar?', `“${d.name}” não foi salvo no Drive nem baixado. Fechar apaga o rascunho deste tablet.`, { ok: 'Fechar mesmo assim', danger: true }))) return false;
-  if (d.dirty && d.source?.t === 'drive' && !(await confirmBox('Fechar?', `“${d.name}” tem alterações que não foram enviadas ao Drive.`, { ok: 'Fechar sem enviar', danger: true }))) return false;
+  const full = (cur && cur.id === d.id ? cur : null) || live.get(d.id) || { ...(await store.getDoc(d.id)), baseBytes: await store.getBytes(d.id) };
+  if (!full?.pages) { await store.deleteDoc(d.id); return true; }
+  if (full.dirty || full.source?.t !== 'drive') {
+    if (!(await saveBeforeClose(full))) return false;
+  }
   const l = live.get(d.id);
   if (l) { live.delete(d.id); try { l.pdf?.destroy?.(); } catch {} }
   await store.deleteDoc(d.id);
   return true;
+}
+
+async function saveBeforeClose(d) {
+  const signed = async () => { try { await drive.signIn(); return true; } catch (e) { toast(e.message, { kind: 'err' }); return false; } };
+  if (d.source?.t === 'drive') {
+    if (!(await signed())) return false;
+    return await syncToDrive(d);
+  }
+  let folder = d.source?.parentId ? { id: d.source.parentId, name: d.source.parentName || 'pasta' } : null;
+  if (!folder) {
+    const v = await modal({
+      title: `Fechar “${d.name}”`,
+      build: b => { b.innerHTML = '<p class="muted">Esta nota ainda não está no Drive.</p>'; },
+      actions: [
+        { label: 'Fechar sem salvar', value: () => 'discard' },
+        { label: 'Baixar PDF', value: () => 'down' },
+        { label: 'Salvar no Drive…', primary: true, value: () => 'drive' },
+      ],
+    });
+    if (v === 'discard') return true;
+    if (v === 'down') {
+      const blob = new Blob([await buildPdf(d.baseBytes, d.pages, { title: d.name })], { type: 'application/pdf' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = d.name + '.pdf';
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+      return true;
+    }
+    if (v !== 'drive') return false;
+    if (!(await signed())) return false;
+    folder = await driveBrowser({ mode: 'folder', startFolder: prefs().lastFolder || 'root' });
+    if (!folder) return false;
+  } else if (!(await signed())) return false;
+  try {
+    toast(`Enviando “${d.name}” ao Drive…`, { ms: 0 });
+    const bytes = await buildPdf(d.baseBytes, d.pages, { title: d.name });
+    await drive.createFile(d.name.endsWith('.pdf') ? d.name : d.name + '.pdf', folder.id, bytes);
+    toast(`“${d.name}” salvo em “${folder.name}”`, { kind: 'ok' });
+    return true;
+  } catch (e) { toast('Não foi possível salvar: ' + (e.message || e), { kind: 'err', ms: 6000 }); return false; }
 }
 
 const pins = () => prefs().pins || [];
@@ -936,7 +978,7 @@ async function docsMenu(anchor) {
       const row = h(`<div class="docs-row ${on ? 'on' : ''}"><button class="docs-open">${src}<span class="docs-name">${esc(d.name)}</span>${d.dirty ? '<span class="docs-dirty" title="Não enviado ao Drive">●</span>' : ''}</button><button class="docs-x" title="Fechar">×</button></div>`);
       $('.docs-open', row).onclick = async () => { close(); if (!on) { await saveLocal(); resumeDoc(d.id); } };
       $('.docs-x', row).onclick = async () => {
-        if (on) { cur.dirty = !!cur.dirty; await saveLocal(); d.dirty = cur.dirty; }
+        if (on) await saveLocal();
         if (!(await closeDoc(d))) return;
         row.remove();
         if (on) {
@@ -1063,17 +1105,22 @@ async function saveDoc() {
 }
 
 // Envia ao Drive um documento que já não está na tela (ao voltar para a área de trabalho).
-const syncing = new Set();
+const syncing = new Map();     // id -> envio em andamento
 async function syncToDrive(d) {
-  if (syncing.has(d.id) || !drive.isConfigured()) return;
-  if (!drive.isSignedIn()) return;
-  syncing.add(d.id);
+  if (syncing.has(d.id)) { const ok = await syncing.get(d.id); if (!d.dirty) return ok; }
+  if (!drive.isConfigured() || !drive.isSignedIn()) return false;
+  const job = syncNow(d);
+  syncing.set(d.id, job);
+  return job;
+}
+
+async function syncNow(d) {
   const rev = d._rev || 0;
   try {
     const meta = await drive.getMeta(d.source.fileId);
     if (d.source.modifiedTime && meta.modifiedTime !== d.source.modifiedTime) {
       toast(`“${d.name}” mudou no Drive: abra para escolher a versão.`, { kind: 'warn', ms: 6000 });
-      return;
+      return false;
     }
     toast(`Enviando “${d.name}” ao Drive…`, { ms: 0 });
     const bytes = await buildPdf(d.baseBytes, d.pages, { title: d.name });
@@ -1091,8 +1138,10 @@ async function syncToDrive(d) {
     if (ed.doc === d) { ed.refreshAll(); updateSaveState(); }
     toast(`“${d.name}” salvo no Drive`, { kind: 'ok' });
     renderTasks();
+    return true;
   } catch (e) {
     toast(`Não foi possível enviar “${d.name}”: ${e.message || e} (continua guardado no tablet)`, { kind: 'err', ms: 6000 });
+    return false;
   } finally { syncing.delete(d.id); }
 }
 
