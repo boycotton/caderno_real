@@ -1,0 +1,20 @@
+{
+  "name": "Caderno PDF",
+  "short_name": "Caderno",
+  "description": "Ler e editar PDFs, criar notas A4 e salvar no Google Drive.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#008080",
+  "theme_color": "#000080",
+  "lang": "pt-BR",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "file_handlers": [
+    { "action": "/", "accept": { "application/pdf": [".pdf"] } }
+  ]
+}
