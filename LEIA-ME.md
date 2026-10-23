@@ -37,7 +37,18 @@ Duas opções gratuitas — escolha uma:
 
 ---
 
-## 2. Liberar o Google Drive (uma vez, ~10 minutos)
+## 2. Google Drive
+
+### Sem configurar nada (funciona na hora)
+- **Abrir arquivo (tablet / Drive)** abre o seletor do Android: toque em ☰ → **Drive** e escolha o PDF.
+- **Salvar → Enviar ao app Drive** abre a lista de apps: escolha **Drive** e a pasta.
+  Isso cria um arquivo novo no Drive (não substitui o original).
+
+### Conexão direta (opcional, grátis, uma vez, ~10 minutos)
+Com ela o app mostra e cria as pastas do Drive e **substitui o arquivo original** ao salvar.
+**Não é pago:** a Google Drive API não cobra nada e não precisa de cartão nem de conta de faturamento.
+O "free trial" de US$ 300 do Google Cloud é para serviços pagos (servidores etc.) — não ative, não é necessário.
+
 
 Como o app é só seu, você mesmo cria a "chave" de acesso no Google Cloud (grátis):
 

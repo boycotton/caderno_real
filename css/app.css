@@ -191,28 +191,40 @@ hr.groove { border-top: 2px solid #808080; border-bottom: 2px solid #fff; margin
 
 /* ---------- editor (Paint do Windows 95) ---------- */
 .editor { position: fixed; inset: 0; display: flex; flex-direction: column; background: var(--face); padding-top: env(safe-area-inset-top); }
-.app-title { flex: none; }
-.app-title .win-title-text { cursor: pointer; font-size: 15px; }
-#doc-src { display: flex; }
-#doc-title { overflow: hidden; text-overflow: ellipsis; max-width: 46vw; }
+#doc-src { display: inline-flex; }
+#doc-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* barra única e compacta: ferramentas + opções da ferramenta na mesma linha */
 .topbar {
-  min-height: 54px; display: flex; align-items: center; gap: 2px; padding: 3px 4px; background: var(--face);
-  border-bottom: 1px solid var(--shade); box-shadow: 0 1px 0 var(--hi); overflow-x: auto; scrollbar-width: none; flex: none;
+  display: flex; align-items: center; gap: 1px; padding: 2px; background: var(--face);
+  border-bottom: 1px solid var(--dark); flex: none; min-width: 0;
 }
-.topbar::-webkit-scrollbar { display: none; }
-.tb-group { display: flex; align-items: center; gap: 2px; padding: 0 5px; flex: none; position: relative; }
-.tb-group + .tb-group::before { /* separador entalhado */
-  content: ""; position: absolute; left: 0; top: 4px; bottom: 4px; width: 0; border-left: 1px solid var(--shade); border-right: 1px solid var(--hi);
+.tb-group { display: flex; align-items: center; gap: 1px; padding: 0 3px; flex: none; position: relative; }
+.tb-group + .tb-group::before, .optbar + .tb-group::before { /* separador entalhado */
+  content: ""; position: absolute; left: 0; top: 3px; bottom: 3px; width: 0; border-left: 1px solid var(--shade); border-right: 1px solid var(--hi);
 }
-.tb-spacer { flex: 1; min-width: 8px; }
-.save-btn { height: 44px; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; font-weight: 700; margin: 0 3px; }
+.tb-right { margin-left: auto; }
+.topbar .icon-btn, .topbar .tool { width: 38px; height: 38px; }
+.topbar .ic { width: 20px; height: 20px; }
+.save-btn { height: 38px; padding: 0 8px; display: inline-flex; align-items: center; gap: 5px; font-weight: 700; margin: 0 2px; font-size: 14px; }
 .save-btn.dirty { color: #000080; }
 .save-btn.dirty::after { content: "*"; color: #c00000; font-size: 18px; margin-left: -2px; }
 .save-btn.busy { color: var(--shade); pointer-events: none; }
 
 .optbar {
-  min-height: 52px; display: flex; align-items: center; gap: 12px; padding: 4px 8px; background: var(--face);
-  border-bottom: 1px solid var(--dark); overflow-x: auto; scrollbar-width: none; flex: none;
+  flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0 6px; position: relative;
+  overflow-x: auto; scrollbar-width: none;
+}
+.optbar:empty { display: none; }
+.optbar::before { content: ""; position: absolute; left: 0; top: 3px; bottom: 3px; border-left: 1px solid var(--shade); border-right: 1px solid var(--hi); }
+.optbar .swatch { width: 24px; height: 24px; }
+.optbar .size { width: 32px; height: 32px; }
+.optbar .chip { height: 32px; padding: 0 8px; font-size: 13px; }
+.optbar .hint { font-size: 13px; }
+/* tablet em pé: as opções descem para uma segunda linha fina */
+@media (max-width: 1000px) {
+  .topbar { flex-wrap: wrap; }
+  .optbar, .optbar:empty { display: flex; order: 10; flex-basis: 100%; height: 38px; padding: 2px 4px 0; margin-top: 2px; border-top: 1px solid var(--shade); box-shadow: inset 0 1px 0 var(--hi); }
+  .optbar::before { display: none; }
 }
 .optbar::-webkit-scrollbar { display: none; }
 .hint { font-size: 14px; display: flex; gap: 6px; align-items: center; white-space: nowrap; }
@@ -251,8 +263,11 @@ hr.groove { border-top: 2px solid #808080; border-bottom: 2px solid #fff; margin
 #viewer::-webkit-scrollbar-corner { background: var(--face); }
 
 /* barra de status */
-.statusbar { flex: none; display: flex; gap: 3px; padding: 3px 4px calc(3px + env(safe-area-inset-bottom)); background: var(--face); font-size: 13px; }
-.sb-panel { box-shadow: var(--thin-in); padding: 3px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.statusbar { flex: none; display: flex; gap: 2px; padding: 2px 3px calc(2px + env(safe-area-inset-bottom)); background: var(--face); font-size: 12px; line-height: 16px; }
+.statusbar button.sb-panel { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; text-align: left; }
+.sb-title { display: flex; gap: 4px; align-items: center; max-width: 40vw; font-weight: 700 !important; }
+.sb-title .ic { width: 13px; height: 13px; }
+.sb-panel { box-shadow: var(--thin-in); padding: 1px 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sb-grow { flex: 1; min-width: 0; }
 
 /* seleção: "formigas marchando" */
@@ -395,14 +410,8 @@ hr.groove { border-top: 2px solid #808080; border-bottom: 2px solid #fff; margin
 @keyframes progress { to { background-size: 100% 100%; } }
 .d-loading .spinner { width: 160px; margin: 0; }
 
-@media (max-width: 1080px) {
-  .topbar { flex-wrap: wrap; row-gap: 2px; }
-  .topbar::after { content: ""; order: 9; flex-basis: 100%; height: 0; }   /* quebra de linha: ferramentas na 2ª linha */
-  .topbar .tools { order: 10; padding-left: 0; }
-  .topbar .tools::before { display: none; }
-  .topbar .tools + .tb-group { order: 11; }
-}
-@media (max-width: 560px) { #save-lbl { display: none; } }
+@media (max-width: 800px) { #save-lbl { display: none; } .save-btn { padding: 0 6px; } }
+
 
 /* ---------- tela inicial: barra de ações + explorador do Drive ---------- */
 .home-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 18px 0 14px; padding: 4px; background: var(--face); box-shadow: var(--win); }
@@ -450,3 +459,5 @@ hr.groove { border-top: 2px solid #808080; border-bottom: 2px solid #fff; margin
 
 .dx-ico { width: 44px; padding: 0; }
 .dx-ico .ic { width: 20px; height: 20px; }
+
+.dx-tips { margin: 4px 0 8px; padding-left: 20px; line-height: 1.5; }

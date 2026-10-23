@@ -33,8 +33,8 @@ function init() {
     onChange: () => { if (cur) { cur.dirty = true; updateSaveState(); scheduleAutosave(); } },
     onHistory: () => { $('#b-undo').disabled = !ed.canUndo(); $('#b-redo').disabled = !ed.canRedo(); },
     onTool: () => renderToolbar(),
-    onPage: (i, n) => { $('#pageind').textContent = `Página ${i + 1} de ${n}`; },
-    onZoom: z => { $('#zoomind').textContent = 'Zoom ' + z + '%'; },
+    onPage: (i, n) => { $('#pageind').textContent = `${i + 1}/${n}`; },
+    onZoom: z => { $('#zoomind').textContent = z + '%'; },
     onSelection: () => {},
     onClip: () => renderToolbar(),
     onToast: m => toast(m, { ms: 4200 }),
@@ -71,7 +71,7 @@ async function showHome() {
       </header>
       <div class="home-tools">
         <button class="btn" id="h-new">${icon('plus', 'sm')} Nova nota</button>
-        <button class="btn" id="h-local">${icon('folder', 'sm')} Abrir PDF do tablet</button>
+        <button class="btn" id="h-local" title="Abre o seletor do Android: tablet, Downloads ou Google Drive">${icon('folder', 'sm')} Abrir arquivo (tablet / Drive)</button>
         <span class="tb-spacer"></span>
         <button class="btn" id="h-settings">${icon('settings', 'sm')} Configurações</button>
       </div>
@@ -307,12 +307,9 @@ function tplPreview(tpl, height) {
 function buildEditorChrome() {
   const e = $('#editor');
   e.innerHTML = `
-    <div class="win-title app-title">
-      <button class="win-title-text" id="b-title" title="Renomear"><span id="doc-src"></span><span>Caderno PDF - [</span><span id="doc-title"></span><span>]</span></button>
-      <span class="win-ctrls"><button id="b-fitw" title="Ajustar à largura">□</button><button id="b-home" title="Fechar e voltar ao início">×</button></span>
-    </div>
     <header class="topbar">
       <div class="tb-group">
+        <button class="icon-btn" id="b-home" title="Fechar e voltar ao início">${icon('back')}</button>
         <button class="icon-btn" id="b-undo" title="Desfazer">${icon('undo')}</button>
         <button class="icon-btn" id="b-redo" title="Refazer">${icon('redo')}</button>
       </div>
@@ -321,15 +318,14 @@ function buildEditorChrome() {
         <button class="icon-btn" id="b-paste" title="Colar (toque na página)">${icon('paste')}</button>
         <button class="icon-btn" id="b-stamps" title="Carimbos salvos">${icon('stamp')}</button>
       </div>
-      <div class="tb-spacer"></div>
-      <div class="tb-group">
+      <div class="optbar" id="optbar"></div>
+      <div class="tb-group tb-right">
         <button class="icon-btn" id="b-spen" title="Só a S Pen desenha">${icon('spen')}</button>
         <button class="icon-btn" id="b-pages" title="Páginas">${icon('pages')}</button>
         <button class="save-btn" id="b-save" title="Salvar">${icon('floppy')}<span id="save-lbl">Salvar</span></button>
         <button class="icon-btn" id="b-more" title="Mais">${icon('more')}</button>
       </div>
     </header>
-    <div class="optbar" id="optbar"></div>
     <div id="stage">
       <div id="viewer"><div id="sheet"></div></div>
       <canvas id="overlay"></canvas>
@@ -338,10 +334,10 @@ function buildEditorChrome() {
       <aside id="pagepanel" class="pagepanel" hidden></aside>
     </div>
     <footer class="statusbar">
+      <button class="sb-panel sb-title" id="b-title" title="Renomear"><span id="doc-src"></span><span id="doc-title"></span></button>
       <span class="sb-panel sb-grow" id="st-save">Pronto</span>
       <span class="sb-panel" id="pageind">1 / 1</span>
-      <span class="sb-panel" id="zoomind">100%</span>
-      <span class="sb-panel" id="st-pen">S Pen</span>
+      <button class="sb-panel" id="b-fitw" title="Ajustar à largura"><span id="zoomind">100%</span></button>
     </footer>`;
   $('#b-fitw').onclick = () => ed.fitWidth();
 
@@ -397,7 +393,6 @@ function renderToolbar() {
   $('#b-paste').classList.toggle('on', ed.tool === 'paste');
   $('#b-paste').disabled = !ed.clip;
   $('#b-spen').classList.toggle('on', ed.penOnly);
-  $('#st-pen').textContent = ed.penOnly ? '✎ Só S Pen' : '✎ Caneta + dedo';
   renderOptbar();
 }
 
@@ -406,12 +401,12 @@ function renderOptbar() {
   const t = ed.tool;
   ob.innerHTML = '';
   if (t === 'paste') {
-    ob.innerHTML = `<span class="hint">${icon('paste', 'sm')} Cada toque na página cola uma cópia · escolha outra ferramenta para sair</span>`;
+    ob.innerHTML = `<span class="hint">${icon('paste', 'sm')} Toque para colar (cada toque = 1 cópia)</span>`;
     return;
   }
   if (t === 'lasso') {
-    ob.innerHTML = `<span class="hint">${icon('lasso', 'sm')} Circule ou toque para selecionar · arraste para mover · canto azul redimensiona</span>`;
-    if (ed.clip) { const b = h(`<button class="chip">${icon('paste', 'sm')} Colar no centro</button>`); b.onclick = () => ed.pasteCenter(); ob.appendChild(b); }
+    ob.innerHTML = `<span class="hint">${icon('lasso', 'sm')} Circule ou toque para selecionar</span>`;
+    if (ed.clip) { const b = h(`<button class="chip">${icon('paste', 'sm')} Colar</button>`); b.onclick = () => ed.pasteCenter(); ob.appendChild(b); }
     return;
   }
   const cfg = ed.cfg[t];
@@ -428,7 +423,7 @@ function renderOptbar() {
     $('input', custom).onchange = () => renderToolbar();
     sw.appendChild(custom);
     ob.appendChild(sw);
-  } else ob.appendChild(h(`<span class="hint">${icon('eraser', 'sm')} Apaga o traço que tocar · botão da S Pen = borracha</span>`));
+  } else ob.appendChild(h(`<span class="hint">${icon('eraser', 'sm')} Apaga o traço inteiro</span>`));
 
   const sizes = h('<div class="sizes"></div>');
   for (const s of SIZES[t]) {
@@ -614,6 +609,7 @@ function moreMenu(anchor) {
       menuItem('drive', cur.source.t === 'drive' ? 'Salvar cópia no Drive…' : 'Salvar no Drive…', () => { close(); saveToDriveAs(); }),
       menuItem('download', 'Baixar PDF no tablet', () => { close(); downloadPdf(); }),
     );
+    if (navigator.canShare) pop.append(menuItem('drive', 'Enviar ao app Drive…', () => { close(); sendToDriveApp(); }));
     if (navigator.canShare) pop.append(menuItem('upload', 'Compartilhar PDF…', () => { close(); sharePdf(); }));
     pop.append(h('<hr>'), menuItem('settings', 'Configurações', () => { close(); openSettings(); }));
   }, { align: 'right' });
@@ -651,7 +647,7 @@ function updateSaveState() {
   b.classList.toggle('busy', saving);
   l.textContent = saving ? 'Salvando…' : cur.dirty ? (src === 'drive' ? 'Salvar' : 'Salvar…') : (src === 'drive' ? 'No Drive' : 'Salvo');
   const st = $('#st-save');
-  if (st) st.textContent = saving ? 'Salvando… aguarde' : cur.dirty ? (src === 'drive' ? 'Alterações ainda não enviadas ao Drive (guardadas no tablet)' : 'Alterações guardadas no tablet') : (src === 'drive' ? 'Salvo no Google Drive' : 'Pronto');
+  if (st) st.textContent = saving ? 'Salvando… aguarde' : cur.dirty ? (src === 'drive' ? 'Não enviado ao Drive (guardado no tablet)' : 'Guardado no tablet') : (src === 'drive' ? 'Salvo no Drive' : 'Pronto');
   b.title = src === 'drive' ? 'Salvar no Google Drive (substitui o arquivo; o Drive guarda versões anteriores)' : 'Salvar no Google Drive ou baixar';
 }
 
@@ -695,16 +691,19 @@ async function saveDoc() {
     return saveToDriveAs({ id: cur.source.parentId, name: cur.source.parentName || 'pasta' });
   }
   if (cur.source.t !== 'drive') {
+    const api = drive.isConfigured();
     const v = await modal({
       title: 'Salvar',
-      build: b => { b.innerHTML = '<p class="muted">Onde você quer salvar este documento?</p>'; },
+      build: b => { b.innerHTML = `<p class="muted">Onde você quer salvar este documento?</p>${api ? '' : '<p class="muted">“Enviar ao app Drive” abre a lista de apps do Android: escolha <b>Drive</b> e depois a pasta.</p>'}`; },
       actions: [
         { label: 'Baixar no tablet', value: () => 'down' },
-        { label: 'Salvar no Google Drive', primary: true, value: () => 'drive' },
+        ...(navigator.canShare ? [{ label: 'Enviar ao app Drive', primary: !api, value: () => 'app' }] : []),
+        ...(api ? [{ label: 'Salvar no Google Drive', primary: true, value: () => 'drive' }] : []),
       ],
     });
     if (v === 'drive') return saveToDriveAs();
     if (v === 'down') return downloadPdf();
+    if (v === 'app') return sendToDriveApp();
     return false;
   }
   saving = true; updateSaveState();
@@ -798,6 +797,34 @@ async function downloadPdf() {
     toast('PDF baixado (pasta Downloads).', { kind: 'ok' });
     return true;
   } catch (e) { toast('Erro ao gerar PDF: ' + e.message, { kind: 'err' }); return false; }
+}
+
+// Sem Google Cloud: gera o PDF e entrega ao app do Google Drive pela folha de compartilhamento do Android.
+// (O Android só deixa abrir a lista de apps logo após um toque, então o PDF é gerado antes e o toque em "Enviar" abre a lista.)
+async function sendToDriveApp() {
+  let file;
+  try {
+    busy('Gerando PDF…');
+    file = new File([await build()], (cur.name || 'nota') + '.pdf', { type: 'application/pdf' });
+  } catch (e) { toast('Erro ao gerar PDF: ' + e.message, { kind: 'err' }); return false; }
+  finally { busy(false); }
+  if (!navigator.canShare?.({ files: [file] })) { toast('Este navegador não envia arquivos para outros apps. Use “Baixar no tablet”.', { kind: 'err' }); return false; }
+  let sent = null;
+  const v = await modal({
+    title: 'Enviar ao Google Drive',
+    build: b => { b.innerHTML = '<p>PDF pronto. Toque em <b>Enviar</b>, escolha <b>Drive</b> na lista de apps e depois a pasta.</p><p class="muted">Isso cria um arquivo novo no Drive. Para substituir o original direto, configure o Google Drive nas Configurações (é grátis).</p>'; },
+    actions: [
+      { label: 'Cancelar', value: () => null },
+      { label: 'Enviar', primary: true, value: () => { sent = navigator.share({ files: [file], title: cur.name }); return 'go'; } },
+    ],
+  });
+  if (v !== 'go' || !sent) return false;
+  try {
+    await sent;
+    if (cur.source.t !== 'drive') { cur.dirty = false; updateSaveState(); saveLocal(); }
+    toast('Enviado. Confira no app do Drive.', { kind: 'ok' });
+    return true;
+  } catch (e) { if (e.name !== 'AbortError') toast('Não foi possível enviar: ' + e.message, { kind: 'err' }); return false; }
 }
 
 async function sharePdf() {

@@ -213,7 +213,7 @@ export function driveExplorer(root, { mode = 'browse', startFolder, on = {} } = 
 
   function showSetup() {
     list.innerHTML = '';
-    const el = h(`<div class="pad dx-msg"><p><b>Google Drive ainda não configurado.</b></p><p>Cole o ID do cliente do Google em Configurações (passo a passo no LEIA-ME).</p><button class="btn primary">${icon('settings', 'sm')} Configurar</button></div>`);
+    const el = h(`<div class="pad dx-msg"><p><b>Sem configurar nada</b> você já usa o Drive pelo próprio tablet:</p><ul class="dx-tips"><li><b>Abrir arquivo</b> (acima) → no seletor do Android toque em ☰ → <b>Drive</b>.</li><li><b>Salvar → Enviar ao app Drive</b> → escolha a pasta no app do Drive.</li></ul><p class="muted">Para ver e criar as pastas aqui e substituir o arquivo original ao salvar, ligue a conexão direta (grátis, uns 10 min, passo a passo no LEIA-ME).</p><button class="btn">${icon('settings', 'sm')} Ligar conexão direta</button></div>`);
     $('button', el).onclick = () => on.configure?.();
     list.appendChild(el);
     $('.dx-count', root).textContent = 'Não configurado';
