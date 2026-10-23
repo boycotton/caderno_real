@@ -89,7 +89,7 @@ Na primeira vez o Google mostra "O Google não verificou este app" → **Continu
 | Lápis | Traço mais fino, tom grafite levemente transparente |
 | Marca-texto | Largo e translúcido |
 | Borracha | Apaga o traço inteiro que tocar. **Segurar o botão da S Pen = borracha temporária** |
-| Reconhecer forma | Com caneta ou lápis: desenhe e **segure a caneta parada** no fim (~0,7 s). Vira reta, seta, curva, círculo, elipse, retângulo, triângulo ou polígono. Reta, seta e curva ganham **bolinhas para ajustar** (curva: início, meio e fim); tocar fora confirma |
+| Prever formas (botão ✨) | Ligado: ao soltar a caneta, o traço vira reta, seta, curva, círculo, elipse, retângulo, triângulo ou polígono. Reta, seta e curva ganham **bolinhas para ajustar** (curva: início, meio e fim); tocar fora confirma |
 | Formas | Linha, seta, retângulo, elipse, triângulo e triângulo retângulo. Linhas se alinham a cada 15°; retângulo/elipse quase quadrados viram quadrado/círculo perfeitos. "Preencher" deixa a forma com fundo translúcido |
 | Texto | Toque na página e digite (o teclado Samsung também aceita escrita à mão). Toque num texto existente para editar |
 | Laço | Circule itens (ou toque em um) para selecionar |
@@ -125,7 +125,7 @@ Atalhos com teclado físico: Ctrl+Z / Ctrl+Y, Ctrl+C / Ctrl+X / Ctrl+V, Ctrl+D (
 ### S Pen e dedos
 - Na primeira vez que a S Pen encosta na tela, o app passa para o modo **"Só a S Pen desenha"**:
   o dedo apenas rola (um dedo) e dá zoom (pinça). A palma apoiada é ignorada enquanto a caneta está na tela.
-- O botão com ícone de caneta (à direita, no alto) liga/desliga esse modo. Desligado: um dedo desenha e dois dedos rolam/dão zoom.
+- No menu **⋮ → Só a S Pen desenha / Dedo também desenha** dá para trocar esse modo. Desligado: um dedo desenha e dois dedos rolam/dão zoom.
 - Pairar a S Pen mostra a área da borracha e a prévia do que vai ser colado.
 
 ### Documentos abertos

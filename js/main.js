@@ -485,9 +485,10 @@ function buildEditorChrome() {
       <div class="optbar" id="optbar"></div>
       <div class="tb-group tb-right">
         <button class="docs-btn" id="b-docs" title="Documentos abertos">${icon('file', 'sm')}<span id="docs-lbl"></span><span class="dd">▾</span></button>
+        <button class="icon-btn" id="b-assist" title="Prever formas (reta, seta, curva, círculo…) ao soltar a caneta">${icon('magic')}</button>
         <button class="icon-btn learn-btn" id="b-learn" title="Modo aprender língua: arraste a caneta sobre uma palavra japonesa do PDF">あ</button>
         <button class="icon-btn lock-btn" id="b-lock" title="Travar (tela cheia, não sai do app sem querer)">${icon('unlock')}</button>
-        <button class="icon-btn" id="b-spen" title="Só a S Pen desenha">${icon('spen')}</button>
+        <button class="icon-btn" id="b-spen" title="Só a S Pen desenha" hidden>${icon('spen')}</button>
         <button class="icon-btn" id="b-pages" title="Páginas">${icon('pages')}</button>
         <button class="save-btn" id="b-save" title="Salvar">${icon('floppy')}<span id="save-lbl">Salvar</span></button>
         <button class="icon-btn" id="b-more" title="Mais">${icon('more')}</button>
@@ -535,6 +536,7 @@ function buildEditorChrome() {
   $('#b-pages').onclick = togglePagePanel;
   $('#b-lock').onclick = toggleLock;
   $('#b-docs').onclick = ev => docsMenu(ev.currentTarget);
+  $('#b-assist').onclick = () => ed.setShapeAssist(!ed.shapeAssist);
   $('#b-learn').onclick = () => { ed.setLearn(!ed.learn); if (!ed.learn) learn.hide(); renderToolbar(); };
   $('#b-save').onclick = () => saveDoc();
   $('#b-more').onclick = ev => moreMenu(ev.currentTarget);
@@ -572,16 +574,14 @@ function renderOptbar() {
   const t = ed.tool;
   ob.innerHTML = '';
   $('#b-learn')?.classList.toggle('on', !!ed.learn);
+  $('#b-assist')?.classList.toggle('on', !!ed.shapeAssist);
   if (ed.learn) {
-    ob.innerHTML = `<span class="hint"><b class="jp-glyph">あ</b> Arraste a caneta sobre a palavra do PDF (toque = 1 caractere)</span>`;
     return;
   }
   if (t === 'paste') {
-    ob.innerHTML = `<span class="hint">${icon('paste', 'sm')} Toque para colar (cada toque = 1 cópia)</span>`;
     return;
   }
   if (t === 'lasso') {
-    ob.innerHTML = `<span class="hint">${icon('lasso', 'sm')} Circule ou toque para selecionar</span>`;
     if (ed.clip) { const b = h(`<button class="chip">${icon('paste', 'sm')} Colar</button>`); b.onclick = () => ed.pasteCenter(); ob.appendChild(b); }
     return;
   }
@@ -599,7 +599,7 @@ function renderOptbar() {
     $('input', custom).onchange = () => renderToolbar();
     sw.appendChild(custom);
     ob.appendChild(sw);
-  } else ob.appendChild(h(`<span class="hint">${icon('eraser', 'sm')} Apaga o traço inteiro</span>`));
+  }
 
   const sizes = h('<div class="sizes"></div>');
   for (const s of SIZES[t]) {
@@ -775,6 +775,7 @@ async function drawThumb(item) {
 function moreMenu(anchor) {
   popover(anchor, (pop, close) => {
     pop.append(
+      menuItem('spen', ed.penOnly ? 'Dedo também desenha' : 'Só a S Pen desenha', () => { close(); $('#b-spen').click(); }),
       menuItem('fit', 'Ajustar à largura', () => { close(); ed.fitWidth(); }),
       menuItem('plus', 'Adicionar página', () => { close(); addPageDialog(); }),
       menuItem('trash', 'Limpar anotações desta página', async () => {

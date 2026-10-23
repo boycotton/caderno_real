@@ -42,6 +42,7 @@ export class Editor {
     try { this.clip = JSON.parse(localStorage.getItem('caderno.clip')); } catch {}
     this.stamp = null;               // conteúdo do modo "colar/carimbo"
     this.penOnly = prefs().penOnly ?? false;
+    this.shapeAssist = !!prefs().shapeAssist;
     this.ptrs = new Map();
     this.gesture = null;
     this.activePen = null;
@@ -427,16 +428,15 @@ export class Editor {
     setPref('toolCfg', save);
   }
 
+  setShapeAssist(v) { this.shapeAssist = !!v; setPref('shapeAssist', this.shapeAssist); this.hooks.onTool?.(); }
+
   setPenOnly(v) { this.penOnly = !!v; setPref('penOnly', this.penOnly); this.hooks.onPenOnly?.(this.penOnly); }
 
   // ---------------- entrada ----------------
   _bind() {
     const v = this.viewer;
     v.addEventListener('pointerdown', e => this._down(e));
-    // pointerrawupdate chega antes do pointermove (menos atraso da caneta); usado só durante o traço
-    this._raw = 'onpointerrawupdate' in window;
-    if (this._raw) v.addEventListener('pointerrawupdate', e => { const g = this.gesture; if (g?.kind === 'draw' && g.obj?.t === 'stroke' && !g.snapped && g.pointerId === e.pointerId) this._move(e, true); });
-    v.addEventListener('pointermove', e => { const g = this.gesture; if (this._raw && g?.kind === 'draw' && g.obj?.t === 'stroke' && !g.snapped && g.pointerId === e.pointerId) return; this._move(e); });
+    v.addEventListener('pointermove', e => this._move(e));
     v.addEventListener('pointerup', e => this._up(e));
     v.addEventListener('pointercancel', e => this._up(e, true));
     v.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch' && !this.ptrs.has(e.pointerId)) this._clearOverlay(); });
@@ -763,7 +763,6 @@ export class Editor {
       // forma reconhecida: reta/seta seguem a caneta; as outras ficam como foram reconhecidas
       if (g.obj.kind === 'line' || g.obj.kind === 'arrow') { g.obj = { ...g.obj, x2: pt.x, y2: pt.y }; this._drawLiveObj(g.pageIndex, g.obj); }
     } else if (g.obj?.t === 'stroke') {
-      this._holdCheck(g, e);
       for (const ce of list) {
         const q = this._pagePoint(ce, g.pageIndex);
         const lastP = g.obj.pts[g.obj.pts.length - 1];
@@ -804,6 +803,18 @@ export class Editor {
       if (n.kind === 'curve' || n.kind === 'line' || n.kind === 'arrow') this._startShapeEdit(p, n.id);
       return;
     }
+    // botão "prever formas" ligado: ao soltar, o traço vira reta/seta/curva/círculo/… se for reconhecido
+    if (g.obj?.t === 'stroke' && this.shapeAssist && !cancel && g.tool !== 'marker') {
+      const r = recognize(g.obj.pts);
+      if (r) {
+        const n = { t: 'shape', color: g.obj.color, size: Math.max(0.8, g.obj.size * (g.tool === 'pencil' ? 0.9 : 0.75)), fill: null, ...r, id: newId() };
+        this._clearOverlay();
+        this._setObjs(p, [...p.objs, n]);
+        this._inkAdd(p, n);
+        if (n.kind === 'curve' || n.kind === 'line' || n.kind === 'arrow') this._startShapeEdit(p, n.id);
+        return;
+      }
+    }
     if (g.obj?.t === 'stroke') {
       if (cancel && g.obj.pts.length < 3) { this._clearOverlay(); return; }
       const o = { ...g.obj, id: newId(), pts: simplifyPts(g.obj.pts, 0.3 / Math.max(0.5, this.zoom)) };
@@ -839,26 +850,6 @@ export class Editor {
     } else if (g.tool === 'paste') {
       if (!g.moved && !cancel) this._pasteAt(p, g.start);
     }
-  }
-
-  // Segurar a caneta parada no fim do traço (~0,6 s) transforma o rabisco em forma perfeita.
-  _holdCheck(g, e) {
-    if (g.tool === 'marker') return;
-    const x = e.clientX, y = e.clientY;
-    if (g.hold && Math.hypot(x - g.hold.x, y - g.hold.y) < 5) return;
-    g.hold = { x, y };
-    clearTimeout(g.holdT);
-    g.holdT = setTimeout(() => this._snapShape(g), 700);
-  }
-
-  _snapShape(g) {
-    if (this.gesture !== g || g.snapped || g.obj?.t !== 'stroke') return;
-    const r = recognize(g.obj.pts);
-    if (!r) return;
-    g.snapped = true;
-    g.obj = { t: 'shape', color: g.obj.color, size: Math.max(0.8, g.obj.size * (g.tool === 'pencil' ? 0.9 : 0.75)), fill: null, ...r };
-    this._drawLiveObj(g.pageIndex, g.obj);
-    try { navigator.vibrate?.(12); } catch {}
   }
 
   _cancelDraw() {
@@ -915,32 +906,15 @@ export class Editor {
     return this.octx;
   }
 
-  // Traço ao vivo: desenha só o trecho novo, na hora (sem esperar o próximo quadro e sem refazer o traço inteiro).
-  // A opacidade do lápis/marca-texto vai no próprio canvas da camada para as emendas não escurecerem.
   _drawLive() {
-    const g = this.gesture;
-    if (!g?.obj || g.obj.t !== 'stroke') return;
-    const o = g.obj, pts = o.pts;
-    const st = TOOL_STYLE[o.tool] || TOOL_STYLE.pen;
-    if (!g.liveN) {
-      this._clearOverlay();
-      this.overlay.style.opacity = st.opacity;
-      g.liveN = 0;
-    }
-    const ctx = this._overlayFor(g.pageIndex);
-    ctx.strokeStyle = ctx.fillStyle = o.color;
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    const th = o.sim ? st.thinning * 0.6 : st.thinning;
-    const wid = pr => Math.max(0.35, o.size * 2 * (0.5 - th * (0.5 - (o.sim ? 0.5 : pr))));
-    if (g.liveN === 0 && pts.length) {
-      ctx.beginPath(); ctx.arc(pts[0][0], pts[0][1], wid(pts[0][2]) / 2, 0, Math.PI * 2); ctx.fill();
-      g.liveN = 1;
-    }
-    for (let k = Math.max(1, g.liveN); k < pts.length; k++) {
-      ctx.lineWidth = wid((pts[k - 1][2] + pts[k][2]) / 2);
-      ctx.beginPath(); ctx.moveTo(pts[k - 1][0], pts[k - 1][1]); ctx.lineTo(pts[k][0], pts[k][1]); ctx.stroke();
-    }
-    g.liveN = pts.length;
+    if (this._liveRaf) return;
+    this._liveRaf = requestAnimationFrame(() => {
+      this._liveRaf = 0;
+      const g = this.gesture;
+      if (!g?.obj || g.obj.t !== 'stroke') return;
+      const o = g.pred?.length ? { ...g.obj, pts: g.obj.pts.concat(g.pred) } : { ...g.obj };
+      this._drawLiveObj(g.pageIndex, o);
+    });
   }
 
   _drawLiveObj(i, o) {
