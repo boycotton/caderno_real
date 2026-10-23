@@ -519,11 +519,8 @@ export class Editor {
   _bind() {
     const v = this.viewer;
     v.addEventListener('pointerdown', e => this._down(e));
-    // Durante o traço, usa pointerrawupdate (chega antes do pointermove, sem esperar o quadro) quando existe
-    this._raw = 'onpointerrawupdate' in window;
-    const drawingStroke = e => { const g = this.gesture; return g?.kind === 'draw' && g.obj?.t === 'stroke' && !g.snapped && g.pointerId === e.pointerId; };
-    if (this._raw) v.addEventListener('pointerrawupdate', e => { if (drawingStroke(e)) this._move(e); });
-    v.addEventListener('pointermove', e => { if (this._raw && drawingStroke(e)) return; this._move(e); });
+    // pointermove já vem alinhado com a tela (um por quadro, com os pontos intermediários juntos)
+    v.addEventListener('pointermove', e => this._move(e));
     v.addEventListener('pointerup', e => this._up(e));
     v.addEventListener('pointercancel', e => this._up(e, true));
     v.addEventListener('pointerleave', e => { if (e.pointerType !== 'touch' && !this.ptrs.has(e.pointerId)) this._clearOverlay(); });
