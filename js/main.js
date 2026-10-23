@@ -69,69 +69,55 @@ async function showHome() {
         <span class="logo">${icon('pen')}</span>
         <h1 class="wordart">Caderno PDF</h1>
       </header>
-      <div class="home-tools">
-        <button class="btn" id="h-new">${icon('plus', 'sm')} Nova nota</button>
-        <button class="btn" id="h-local" title="Abre o seletor do Android: tablet, Downloads ou Google Drive">${icon('folder', 'sm')} Abrir arquivo (tablet / Drive)</button>
-        <span class="tb-spacer"></span>
-        <button class="btn" id="h-settings">${icon('settings', 'sm')} Configurações</button>
-      </div>
-      <div class="home-cols">
-        <section class="window drive-win">
-          <div class="win-title"><span class="win-title-text">${icon('drive', 'sm')} Google Drive</span></div>
-          <div class="win-body" id="home-drive"></div>
-        </section>
-        <section class="window recents">
-          <div class="win-title"><span class="win-title-text">${icon('clock', 'sm')} Recentes neste tablet</span></div>
-          <div class="win-body"><div id="recent-list" class="recent-list sunken"><p class="pad">Carregando…</p></div></div>
-        </section>
-      </div>
+      <section class="window files-win">
+        <div class="win-title"><span class="win-title-text">${icon('folder', 'sm')} Arquivos</span></div>
+        <div class="win-body" id="home-drive"></div>
+      </section>
     </div>
     <input type="file" id="h-file" accept="application/pdf,.pdf" hidden>`;
   driveExplorer($('#home-drive'), {
     mode: 'browse',
-    on: { openFile: openDriveFile, newNote: folder => newNoteDialog(folder), configure: openSettings, pickFolder: title => driveBrowser({ mode: 'folder', title, button: 'Mover para cá' }) },
+    on: {
+      openFile: openDriveFile,
+      newNote: folder => newNoteDialog(drive.isSignedIn() ? folder : undefined),
+      configure: openSettings,
+      openLocal: () => $('#h-file').click(),
+      renderLocal: el => renderRecents(el),
+      pickFolder: title => driveBrowser({ mode: 'folder', title, button: 'Mover para cá' }),
+    },
   });
-  $('#h-settings').onclick = openSettings;
-  $('#h-new').onclick = () => newNoteDialog();
-  $('#h-local').onclick = () => $('#h-file').click();
   $('#h-file').onchange = async e => {
     const f = e.target.files[0];
     if (!f) return;
     const bytes = new Uint8Array(await f.arrayBuffer());
     await openFromBytes(bytes, { name: f.name.replace(/\.pdf$/i, ''), source: { t: 'local' } });
   };
-  renderRecents();
 }
 
-async function renderRecents() {
-  const list = $('#recent-list');
-  if (!list) return;
+async function renderRecents(list) {
   const docs = await store.listDocs().catch(() => []);
-  if (!docs.length) { list.innerHTML = '<p class="empty pad">Nada por aqui ainda. Crie uma nota ou abra um PDF.</p>'; return; }
-  list.innerHTML = `<table class="explorer"><thead><tr><th></th><th>Nome</th><th>Origem</th><th>Págs.</th><th>Modificado</th><th></th></tr></thead><tbody></tbody></table>`;
-  const tb = $('tbody', list);
+  list.innerHTML = '';
+  if (!docs.length) { list.innerHTML = '<p class="pad muted">Vazio.</p>'; return 0; }
   for (const d of docs) {
-    const src = d.source?.t === 'drive' ? icon('drive', 'sm') + ' Drive' : d.source?.t === 'local' ? icon('folder', 'sm') + ' Tablet' : icon('file', 'sm') + ' Nova';
-    const el = h(`<tr class="recent">
-      <td class="r-thumb-cell"><span class="r-thumb"></span></td>
-      <td><a href="#" class="r-open">${esc(d.name)}</a>${d.dirty ? ' <span class="badge warn">não enviado</span>' : ''}</td>
-      <td class="nowrap">${src}</td>
-      <td>${d.pageCount || d.pages?.length || 0}</td>
-      <td class="nowrap">${fmtDate(d.updatedAt)}</td>
-      <td><button class="btn tiny-btn r-more" title="Opções">${icon('more', 'sm')}</button></td></tr>`);
-    const open = ev => { ev.preventDefault(); resumeDoc(d.id); };
-    $('.r-open', el).onclick = open;
-    $('.r-thumb-cell', el).onclick = open;
-    $('.r-more', el).onclick = ev => popover(ev.currentTarget, (pop, close) => {
-      pop.append(menuItem('trash', 'Remover da lista', async () => {
+    const src = d.source?.t === 'drive' ? icon('drive', 'sm') : d.source?.t === 'local' ? icon('folder', 'sm') : icon('file', 'sm');
+    const el = h(`<div class="d-row" role="listitem" tabindex="0">
+      <span class="r-thumb"></span>
+      <span class="d-name">${esc(d.name)}${d.dirty ? ' <span class="badge warn">não enviado</span>' : ''}</span>
+      <span class="d-meta">${src}</span>
+      <span class="d-meta d-date">${fmtDate(d.updatedAt)}</span>
+      <button class="btn tiny-btn d-more" title="Opções">${icon('more', 'sm')}</button></div>`);
+    el.addEventListener('click', ev => { if (!ev.target.closest('.d-more')) resumeDoc(d.id); });
+    $('.d-more', el).onclick = ev => popover(ev.currentTarget, (pop, close) => {
+      pop.append(menuItem('trash', 'Remover deste tablet', async () => {
         close();
-        if (d.dirty && !(await confirmBox('Remover?', 'Há alterações que ainda não foram salvas no Drive ou baixadas. Remover mesmo assim?', { ok: 'Remover', danger: true }))) return;
-        await store.deleteDoc(d.id); renderRecents();
+        if (d.dirty && !(await confirmBox('Remover?', 'Há alterações não salvas no Drive. Remover mesmo assim?', { ok: 'Remover', danger: true }))) return;
+        await store.deleteDoc(d.id); renderRecents(list);
       }));
     }, { align: 'right' });
-    tb.appendChild(el);
+    list.appendChild(el);
     drawRecentThumb($('.r-thumb', el), d);
   }
+  return docs.length;
 }
 
 function drawRecentThumb(holder, d) {
@@ -694,7 +680,7 @@ async function saveDoc() {
     const api = drive.isConfigured();
     const v = await modal({
       title: 'Salvar',
-      build: b => { b.innerHTML = `<p class="muted">Onde você quer salvar este documento?</p>${api ? '' : '<p class="muted">“Enviar ao app Drive” abre a lista de apps do Android: escolha <b>Drive</b> e depois a pasta.</p>'}`; },
+      build: b => { b.innerHTML = '<p class="muted">Onde salvar?</p>'; },
       actions: [
         { label: 'Baixar no tablet', value: () => 'down' },
         ...(navigator.canShare ? [{ label: 'Enviar ao app Drive', primary: !api, value: () => 'app' }] : []),
@@ -812,7 +798,7 @@ async function sendToDriveApp() {
   let sent = null;
   const v = await modal({
     title: 'Enviar ao Google Drive',
-    build: b => { b.innerHTML = '<p>PDF pronto. Toque em <b>Enviar</b>, escolha <b>Drive</b> na lista de apps e depois a pasta.</p><p class="muted">Isso cria um arquivo novo no Drive. Para substituir o original direto, configure o Google Drive nas Configurações (é grátis).</p>'; },
+    build: b => { b.innerHTML = '<p>Toque em <b>Enviar</b> e escolha <b>Drive</b>.</p>'; },
     actions: [
       { label: 'Cancelar', value: () => null },
       { label: 'Enviar', primary: true, value: () => { sent = navigator.share({ files: [file], title: cur.name }); return 'go'; } },

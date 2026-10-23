@@ -8,11 +8,13 @@ const ROOTS = {
   root: { id: 'root', name: 'Meu Drive' },
   shared: { id: 'shared', name: 'Compartilhados comigo' },
   recent: { id: 'recent', name: 'Recentes' },
+  local: { id: 'local', name: 'Neste tablet' },
 };
+const SPECIAL = new Set(['recent', 'shared', 'local']);
 
 /**
  * mode: 'browse' (tela inicial) | 'open' (escolher PDF) | 'folder' (escolher pasta)
- * on: { openFile(f), newNote(folder), configure(), pickFolder(folder) }
+ * on: { openFile(f), newNote(folder), configure(), pickFolder(folder), openLocal(), renderLocal(listEl) => count }
  */
 export function driveExplorer(root, { mode = 'browse', startFolder, on = {} } = {}) {
   let path = [ROOTS.root];          // pastas desde a raiz
@@ -28,27 +30,33 @@ export function driveExplorer(root, { mode = 'browse', startFolder, on = {} } = 
       <button class="btn dx-b dx-ico" data-a="up" title="Pasta acima">${icon('up', 'sm')}</button>
       <button class="btn dx-b dx-ico" data-a="reload" title="Atualizar">${icon('redo', 'sm')}</button>
       <span class="dx-sep"></span>
-      <button class="btn dx-b" data-a="newfolder" title="Criar pasta aqui">${icon('folderplus', 'sm')}<span>Nova pasta</span></button>
+      ${mode === 'browse' ? `<button class="btn dx-b" data-a="newnote" title="Nova nota nesta pasta">${icon('plus', 'sm')}<span>Nova nota</span></button>` : ''}
+      <button class="btn dx-b" data-a="newfolder" title="Nova pasta aqui">${icon('folderplus', 'sm')}<span>Nova pasta</span></button>
       ${mode === 'browse' ? `
-      <button class="btn dx-b" data-a="newnote" title="Criar uma nota nesta pasta">${icon('plus', 'sm')}<span>Nova nota aqui</span></button>
-      <button class="btn dx-b" data-a="upload" title="Enviar um PDF do tablet para esta pasta">${icon('upload', 'sm')}<span>Enviar PDF</span></button>` : ''}
+      <button class="btn dx-b" data-a="upload" title="Enviar PDF do tablet para esta pasta">${icon('upload', 'sm')}<span>Enviar PDF</span></button>
+      <button class="btn dx-b" data-a="openlocal" title="Abrir PDF do tablet">${icon('file', 'sm')}<span>Abrir do tablet</span></button>
+      <span class="dx-grow"></span>
+      <button class="btn dx-b dx-ico" data-a="settings" title="Configurações">${icon('settings', 'sm')}</button>` : ''}
       <input type="file" class="dx-file" accept="application/pdf,.pdf" multiple hidden>
     </div>
-    <div class="dx-tabs">
-      <button data-root="root">${icon('drive', 'sm')} Meu Drive</button>
-      <button data-root="shared">${icon('folder', 'sm')} Compartilhados</button>
-      ${mode !== 'folder' ? `<button data-root="recent">${icon('clock', 'sm')} Recentes</button>` : ''}
-      <label class="search">${icon('search', 'sm')}<input type="search" placeholder="Buscar no Drive"></label>
+    <div class="dx-main">
+      <nav class="dx-side">
+        <button data-root="root">${icon('drive', 'sm')}<span>Meu Drive</span></button>
+        <button data-root="shared">${icon('folder', 'sm')}<span>Compartilhados</span></button>
+        ${mode !== 'folder' ? `<button data-root="recent">${icon('clock', 'sm')}<span>Recentes</span></button>` : ''}
+        ${mode === 'browse' ? `<button data-root="local">${icon('pages', 'sm')}<span>Neste tablet</span></button>` : ''}
+      </nav>
+      <div class="dx-pane">
+        <div class="dx-addr"><div class="crumbs"></div><label class="search">${icon('search', 'sm')}<input type="search" placeholder="Buscar"></label></div>
+        <div class="d-list" role="list"></div>
+      </div>
     </div>
-    <div class="crumbs"></div>
-    <div class="d-list" role="list"></div>
     <div class="dx-status"><span class="sb-panel sb-grow dx-count"></span><span class="sb-panel dx-where"></span></div>`;
 
   const list = $('.d-list', root);
   const crumbs = $('.crumbs', root);
   const searchInput = $('input[type=search]', root);
   const here = () => path[path.length - 1];
-  const inSpecial = () => here().id === 'recent' || (here().id === 'shared') || !!search;
 
   // ---------- navegação ----------
   function go(newPath, { push = true } = {}) {
@@ -70,6 +78,8 @@ export function driveExplorer(root, { mode = 'browse', startFolder, on = {} } = 
       else if (a === 'newfolder') newFolder();
       else if (a === 'newnote') on.newNote?.(folderInfo());
       else if (a === 'upload') $('.dx-file', root).click();
+      else if (a === 'openlocal') on.openLocal?.();
+      else if (a === 'settings') on.configure?.();
       return;
     }
     const t = e.target.closest('[data-root]');
@@ -100,7 +110,7 @@ export function driveExplorer(root, { mode = 'browse', startFolder, on = {} } = 
   // pasta onde ações "aqui" acontecem (Recentes/Compartilhados na raiz -> Meu Drive)
   function folderInfo() {
     const f = here();
-    if (f.id === 'recent' || f.id === 'shared') return ROOTS.root;
+    if (SPECIAL.has(f.id)) return ROOTS.root;
     return { id: f.id, name: f.name };
   }
 
@@ -119,7 +129,7 @@ export function driveExplorer(root, { mode = 'browse', startFolder, on = {} } = 
 
   // ---------- desenho ----------
   function paintChrome() {
-    $$('.dx-tabs [data-root]', root).forEach(b => b.classList.toggle('on', !search && path[0].id === b.dataset.root));
+    $$('.dx-side [data-root]', root).forEach(b => b.classList.toggle('on', !search && path[0].id === b.dataset.root));
     crumbs.innerHTML = '';
     if (search) { crumbs.innerHTML = `<span>Resultados para “${esc(search)}”</span>`; }
     else path.forEach((p, k) => {
@@ -130,15 +140,21 @@ export function driveExplorer(root, { mode = 'browse', startFolder, on = {} } = 
     });
     $('[data-a=back]', root).disabled = !back.length;
     $('[data-a=up]', root).disabled = path.length <= 1 || !!search;
-    const special = here().id === 'recent' || here().id === 'shared';
+    const special = SPECIAL.has(here().id);
     $('[data-a=newfolder]', root).disabled = special || !!search;
-    $$('[data-a=newnote],[data-a=upload]', root).forEach(b => b.disabled = special || !!search);
-    $('.dx-where', root).textContent = folderInfo().name;
+    $$('[data-a=upload]', root).forEach(b => b.disabled = special || !!search);
+    $('.dx-addr .search', root).hidden = here().id === 'local';
+    $('.dx-where', root).textContent = here().id === 'local' ? 'Tablet' : folderInfo().name;
   }
 
   async function load() {
     const seq = ++loadSeq;
     paintChrome();
+    if (here().id === 'local' && !search) {
+      const n = await on.renderLocal?.(list);
+      if (seq === loadSeq) $('.dx-count', root).textContent = `${n || 0} documento(s)`;
+      return;
+    }
     if (!drive.isConfigured()) return showSetup();
     if (!drive.isSignedIn() && mode === 'browse') return showLogin();
     list.innerHTML = '<div class="d-loading"><span class="spinner"></span> Carregando…</div>';
@@ -148,7 +164,7 @@ export function driveExplorer(root, { mode = 'browse', startFolder, on = {} } = 
       const res = await drive.listFolder(f.id, { search, recent: f.id === 'recent' && !search });
       if (seq !== loadSeq) return;
       items = res;
-      if (!search && f.id !== 'recent' && f.id !== 'shared') setPref('lastFolder', f.id);
+      if (!search && !SPECIAL.has(f.id)) setPref('lastFolder', f.id);
       paintList();
     } catch (e) {
       if (seq !== loadSeq) return;
@@ -162,7 +178,7 @@ export function driveExplorer(root, { mode = 'browse', startFolder, on = {} } = 
     const shown = mode === 'folder' ? folders : [...folders, ...pdfs];
     list.innerHTML = '';
     if (!shown.length) {
-      list.innerHTML = `<p class="pad muted">${mode === 'folder' ? 'Nenhuma subpasta aqui. Use “Nova pasta” ou salve nesta pasta.' : search ? 'Nada encontrado.' : 'Pasta vazia. Use “Nova pasta”, “Nova nota aqui” ou “Enviar PDF”.'}</p>`;
+      list.innerHTML = `<p class="pad muted">${search ? 'Nada encontrado.' : 'Pasta vazia.'}</p>`;
     }
     for (const f of shown) {
       const isF = f.mimeType === drive.FOLDER_MIME;
@@ -211,20 +227,19 @@ export function driveExplorer(root, { mode = 'browse', startFolder, on = {} } = 
     }, { align: 'right' });
   }
 
-  function showSetup() {
+  function loginButton(onClick) {
     list.innerHTML = '';
-    const el = h(`<div class="pad dx-msg"><p><b>Sem configurar nada</b> você já usa o Drive pelo próprio tablet:</p><ul class="dx-tips"><li><b>Abrir arquivo</b> (acima) → no seletor do Android toque em ☰ → <b>Drive</b>.</li><li><b>Salvar → Enviar ao app Drive</b> → escolha a pasta no app do Drive.</li></ul><p class="muted">Para ver e criar as pastas aqui e substituir o arquivo original ao salvar, ligue a conexão direta (grátis, uns 10 min, passo a passo no LEIA-ME).</p><button class="btn">${icon('settings', 'sm')} Ligar conexão direta</button></div>`);
-    $('button', el).onclick = () => on.configure?.();
-    list.appendChild(el);
-    $('.dx-count', root).textContent = 'Não configurado';
-  }
-
-  function showLogin(err) {
-    list.innerHTML = '';
-    const el = h(`<div class="pad dx-msg">${err ? `<p class="err-text">${esc(err)}</p>` : '<p>Entre com sua conta Google para ver suas pastas.</p>'}<button class="btn primary">${icon('drive', 'sm')} Entrar com Google</button></div>`);
-    $('button', el).onclick = async () => { try { await drive.signIn(); load(); } catch (x) { toast(x.message, { kind: 'err' }); } };
+    const el = h(`<div class="dx-login"><button class="btn primary">${icon('drive', 'sm')} Entrar com Google</button></div>`);
+    $('button', el).onclick = onClick;
     list.appendChild(el);
     $('.dx-count', root).textContent = 'Desconectado';
+  }
+
+  function showSetup() { loginButton(() => on.configure?.()); }
+
+  function showLogin(err) {
+    loginButton(async () => { try { await drive.signIn(); load(); } catch (x) { toast(x.message, { kind: 'err' }); } });
+    if (err) toast(err, { kind: 'err', ms: 5000 });
   }
 
   // ---------- início ----------

@@ -413,32 +413,44 @@ hr.groove { border-top: 2px solid #808080; border-bottom: 2px solid #fff; margin
 @media (max-width: 800px) { #save-lbl { display: none; } .save-btn { padding: 0 6px; } }
 
 
-/* ---------- tela inicial: barra de ações + explorador do Drive ---------- */
-.home-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 18px 0 14px; padding: 4px; background: var(--face); box-shadow: var(--win); }
-.home-tools .btn { min-height: 44px; }
-.home-cols { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr); gap: 14px; align-items: start; }
-.home-cols .window { color: #000; }
-.recents { margin-top: 0; }
-.recent-list { max-height: calc(100vh - 230px); }
-.recents .explorer th:nth-child(3), .recents .explorer td:nth-child(3),
-.recents .explorer th:nth-child(4), .recents .explorer td:nth-child(4) { display: none; }
-@media (max-width: 1000px) {
-  .home-cols { grid-template-columns: 1fr; }
-  .recent-list { max-height: 40vh; }
-}
+/* ---------- tela inicial: uma janela "Arquivos" ocupando a tela ---------- */
+.home .geo-wrap { max-width: 1200px; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; padding: calc(12px + env(safe-area-inset-top)) 16px calc(12px + env(safe-area-inset-bottom)); }
+.home .geo-head { flex: none; }
+.home .logo { width: 44px; height: 44px; }
+.home .logo .ic { width: 24px; height: 24px; }
+.home .wordart { font-size: clamp(30px, 4.5vw, 42px); }
+.files-win { flex: 1; min-height: 0; display: flex; flex-direction: column; color: #000; }
+.files-win > .win-body.dx { flex: 1; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto; }
+.files-win .dx .d-list { max-height: none; min-height: 0; height: 100%; }
 
 /* explorador */
 .dx { display: grid; gap: 6px; }
 .dx-tools { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .dx-b { min-width: 0; min-height: 40px; padding: 0 10px; gap: 6px; font-size: 14px; }
 .dx-sep { width: 0; height: 30px; border-left: 1px solid var(--shade); border-right: 1px solid var(--hi); margin: 0 4px; }
-.dx-tabs { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
-.dx-tabs > button { background: var(--face); border: 0; box-shadow: var(--raised); height: 38px; padding: 0 12px; display: flex; gap: 6px; align-items: center; }
-.dx-tabs > button.on { box-shadow: var(--pressed); background: var(--dither); font-weight: 700; }
-.dx-tabs .search { flex: 1; min-width: 160px; }
+/* barra lateral (como o painel esquerdo do Windows Explorer) */
+.dx-main { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 6px; min-height: 0; }
+.dx-side { display: flex; flex-direction: column; gap: 2px; padding: 4px; background: #fff; box-shadow: var(--field); overflow-y: auto; }
+.dx-side button { background: none; border: 0; display: flex; gap: 8px; align-items: center; height: 40px; padding: 0 8px; text-align: left; font-size: 14px; color: #000; }
+.dx-side button.on { background: var(--navy); color: #fff; outline: 1px dotted #ff0; outline-offset: -2px; }
+.dx-pane { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 6px; min-height: 0; }
+.dx-addr { display: flex; gap: 6px; align-items: center; }
+.dx-addr .crumbs { flex: 1; min-width: 0; display: flex; flex-wrap: nowrap; align-items: center; white-space: nowrap; overflow-x: auto; scrollbar-width: none; }
+.dx-addr .search { width: 220px; flex: none; }
+.dx-grow { flex: 1; }
+.dx-login { height: 100%; min-height: 200px; display: grid; place-items: center; }
+.dx-login .btn { min-height: 48px; padding: 0 22px; font-size: 16px; }
+.r-thumb { width: 24px; height: 32px; }
+@media (max-width: 900px) { .dx-tools .dx-b:not([data-a=newnote]) span { display: none; } .dx-tools .dx-b { min-width: 44px; } }
+@media (max-width: 760px) {
+  .dx-main { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+  .dx-side { flex-direction: row; overflow-x: auto; }
+  .dx-side button { flex: none; }
+  .dx-addr .search { width: 140px; }
+}
 .dx .crumbs { margin: 0; }
 .dx .crumbs .sep { color: #000; margin: 0 1px; }
-.dx .d-list { max-height: calc(100vh - 330px); min-height: 280px; }
+.dx .d-list { max-height: calc(100vh - 330px); min-height: 200px; overflow-y: auto; }
 .drive-modal .dx .d-list { max-height: 48vh; min-height: 240px; }
 .d-row {
   display: grid; grid-template-columns: 24px minmax(0, 1fr) auto auto 34px; gap: 10px; align-items: center;
@@ -460,4 +472,3 @@ hr.groove { border-top: 2px solid #808080; border-bottom: 2px solid #fff; margin
 .dx-ico { width: 44px; padding: 0; }
 .dx-ico .ic { width: 20px; height: 20px; }
 
-.dx-tips { margin: 4px 0 8px; padding-left: 20px; line-height: 1.5; }
