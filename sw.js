@@ -1,5 +1,5 @@
 // Service worker: deixa o app abrir mesmo sem internet (o Drive, claro, precisa de rede).
-const VERSION = 'caderno-v8';
+const VERSION = 'caderno-v9';
 const CORE = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/main.js', 'js/explorer.js', 'js/recognize.js', 'js/editor.js', 'js/ink.js', 'js/pdfio.js', 'js/templates.js', 'js/drive.js', 'js/store.js', 'js/ui.js',
@@ -21,7 +21,8 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || url.origin !== location.origin) return; // Google APIs: sempre pela rede
   // rede primeiro (pega atualizações), cache se estiver offline
   e.respondWith(
-    fetch(e.request).then(r => {
+    // no-cache: sempre confere com o servidor (o GitHub Pages guarda arquivos por 10 min e misturaria versões)
+    fetch(e.request.url, { cache: 'no-cache', credentials: 'same-origin' }).then(r => {
       if (r.ok) { const copy = r.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); }
       return r;
     }).catch(() => caches.match(e.request, { ignoreSearch: true }).then(r => r || caches.match('index.html')))
