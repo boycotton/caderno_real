@@ -1,5 +1,5 @@
 // Editor de páginas: exibição, zoom, ferramentas e entrada da S Pen.
-import { drawObj, geom, hitObj, inLasso, transformObj, unionBox, simplifyPts, newId, TOOL_STYLE, imageHooks, drawStrokeSegs } from './ink.js';
+import { drawObj, geom, hitObj, inLasso, transformObj, unionBox, simplifyPts, newId, TOOL_STYLE, imageHooks, drawStrokeSegs, strokeWidth } from './ink.js';
 import { drawTemplateCanvas } from './templates.js';
 import { recognize } from './recognize.js';
 import { prefs, setPref } from './store.js';
@@ -26,7 +26,8 @@ export class Editor {
     this.sheet = root.querySelector('#sheet');
     this.overlay = root.querySelector('#overlay');
     // sem 'desynchronized': em tablets Android esse modo deixa o fundo transparente preto
-    this._makeOverlay(!!prefs().lowLatency);
+    this._makeOverlay(false);
+    this._setupInkPresenter();
     this.doc = null;
     this.views = new Map();
     this.layout = [];
@@ -267,8 +268,9 @@ export class Editor {
       let c = v.dt?.c;
       if (!c) {
         c = document.createElement('canvas'); c.className = 'detail';
-        // opaca + desynchronized: o Chrome pode desenhar direto na tela (baixa latência) e esconder o que está por baixo
-        c.getContext('2d', { alpha: false, desynchronized: true });
+        // opaca: o Chrome esconde (não recompõe) o que está por baixo. Sem "desynchronized": no Android esse modo
+        // segura a atualização da tela e o traço só aparecia de uma vez depois.
+        c.getContext('2d', { alpha: false });
         c.addEventListener('contextrestored', () => { if (v.dt?.c === c) { v.dt.z = 0; this._scheduleDetail(); } });
         v.el.appendChild(c);
       }
@@ -806,6 +808,14 @@ export class Editor {
     this._vw = 0;
     this._onResize?.();
   }
+  async _setupInkPresenter() {
+    try { if (navigator.ink?.requestPresenter) this._ink = await navigator.ink.requestPresenter({ presentationArea: this.viewer }); } catch { this._ink = null; }
+  }
+  _inkTrail(e, g) {
+    if (!this._ink || !e.isTrusted) return;
+    try { this._ink.updateInkTrailStartPoint(e, { color: g.obj.color, diameter: Math.max(1, strokeWidth(g.obj, 0.5) * this.zoom) }); } catch {}
+  }
+
   setLowLatency(v) { setPref('lowLatency', !!v); this._makeOverlay(!!v); return this.lowLatency; }
 
   _startDraw(e) {
@@ -897,6 +907,7 @@ export class Editor {
         g.obj.pts.push([q.x, q.y, pr]);
       }
       this._drawLive();
+      if (g.obj.tool !== 'marker') this._inkTrail(e, g);
     } else if (g.tool === 'eraser') {
       for (const ce of list) this._eraseAt(g, this._pagePoint(ce, g.pageIndex));
       this._drawEraserCursor(g.pageIndex, pt);

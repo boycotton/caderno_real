@@ -1,5 +1,5 @@
 // Service worker: deixa o app abrir mesmo sem internet (o Drive, claro, precisa de rede).
-const VERSION = 'caderno-v23';
+const VERSION = 'caderno-v24';
 const CORE = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/main.js', 'js/calc.js', 'js/explorer.js', 'js/recognize.js', 'js/learn.js', 'js/jdict.js', 'js/editor.js', 'js/ink.js', 'js/pdfio.js', 'js/templates.js', 'js/drive.js', 'js/store.js', 'js/ui.js',
